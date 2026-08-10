@@ -16,7 +16,31 @@ sau đó mở:
 http://localhost:5500
 ```
 
-> Cần Internet khi mở trang lần đầu vì Three.js được tải từ jsDelivr CDN. Không có model 3D ngoài; phòng học, camera, học sinh, digital twin, AI core và hệ Mặt Trời đều được dựng bằng geometry trong code.
+> Cần Internet khi mở trang lần đầu vì Three.js được tải từ jsDelivr CDN. Nhân vật sử dụng model GLB trong `assets/`; phòng học, camera, digital twin, AI core và các hiệu ứng còn lại được dựng bằng Three.js.
+
+## Build và triển khai Cloudflare
+
+Dự án được cấu hình cho **Cloudflare Workers Static Assets** qua `wrangler.jsonc`.
+
+```bash
+npm install
+npm run build
+npm run deploy:check
+```
+
+Triển khai bằng Wrangler:
+
+```bash
+npm run deploy
+```
+
+Khi kết nối repository trong Cloudflare Workers Builds, sử dụng:
+
+- Build command: `npm run build`
+- Deploy command: `npx wrangler deploy`
+- Root directory: `/`
+
+Thư mục xuất bản là `dist/`. Các đường dẫn không khớp tài nguyên sẽ được trả về `index.html` để liên kết điều hướng của giao diện tiếp tục hoạt động.
 
 ## Flow đã code
 
