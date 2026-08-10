@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#020408" />
+  <meta name="description" content="EduVision AI — Lớp học thông minh cùng suy nghĩ với bạn." />
+  <title>EduVision AI — Lớp học thông minh</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.180.0/examples/jsm/",
+        "animejs": "https://cdn.jsdelivr.net/npm/animejs@3.2.2/lib/anime.es.js",
+        "cannon-es": "https://cdn.jsdelivr.net/npm/cannon-es@0.20.0/dist/cannon-es.js"
+      }
+    }
+  </script>
+  <script type="module" src="/src/main.js"></script>
+</head>
+<body class="intro-lock">
+  <canvas id="webgl" aria-hidden="true"></canvas>
+
+  <div class="ambient ambient--cyan" aria-hidden="true"></div>
+  <div class="ambient ambient--violet" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+  <div class="vignette" aria-hidden="true"></div>
+
+  <!-- Mở đầu điện ảnh -->
+  <div class="intro" id="intro" role="dialog" aria-label="Mở đầu điện ảnh EduVision AI">
+    <canvas id="introParticles" aria-hidden="true"></canvas>
+    <div class="intro-glow intro-glow--cyan" aria-hidden="true"></div>
+    <div class="intro-glow intro-glow--violet" aria-hidden="true"></div>
+
+    <div class="intro-stage">
+      <div class="orbit-scene" id="orbitScene">
+        <div class="orbit-ring orbit-ring--1"></div>
+        <div class="orbit-ring orbit-ring--2"></div>
+        <div class="orbit-ring orbit-ring--3"></div>
+        <div class="comet comet--1"></div>
+        <div class="comet comet--2"></div>
+        <div class="comet comet--3"></div>
+        <div class="ghost-layer" id="ghostLayer"></div>
+
+        <div class="logo-shell" id="logoShell">
+          <div class="logo-aura" id="logoAura"></div>
+          <img class="logo logo--echo echo-a" src="/assets/logo-icon.png" alt="" />
+          <img class="logo logo--echo echo-b" src="/assets/logo-icon.png" alt="" />
+          <img class="logo logo--main" id="logoMain" src="/assets/logo-icon.png" alt="EduVision AI" />
+          <div class="logo-shine" id="logoShine"></div>
+        </div>
+      </div>
+
+      <div class="intro-copy">
+        <h1 class="wordmark" id="wordmark" aria-label="EduVision AI"></h1>
+        <p class="intro-tagline" id="introTagline">LỚP HỌC THÔNG MINH · THỊ GIÁC AI</p>
+        <p class="enter-line" id="enterLine">ĐANG MỞ CỬA VÀO LỚP HỌC</p>
+      </div>
+    </div>
+
+    <div class="intro-flash" id="introFlash"></div>
+    <div class="intro-scanline" id="introScanline"></div>
+    <button class="skip-intro" id="skipIntro" type="button">BỎ QUA</button>
+    <div class="intro-progress"><i id="introProgress"></i></div>
+  </div>
+
+  <header class="topbar" id="topbar">
+    <a class="brand" href="#hero" aria-label="Trang chủ EduVision AI">
+      <img src="/assets/logo-icon.png" alt="" />
+      <span>EduVision AI</span>
+    </a>
+    <div class="topbar-right">
+      <span class="system-status"><i></i> LỚP HỌC AI ĐANG KẾT NỐI</span>
+      <a class="demo-link" href="#cta">KHÁM PHÁ NGAY <span>↗</span></a>
+    </div>
+  </header>
+
+  <aside class="scene-rail" id="sceneRail" aria-hidden="true">
+    <div class="rail-line"><i id="railProgress"></i></div>
+    <div class="rail-copy">
+      <span id="sceneIndex">01</span>
+      <span id="sceneName">LỚP HỌC</span>
+    </div>
+  </aside>
+
+  <main id="site">
+    <section class="scene scene--hero" id="hero" data-index="01" data-name="LỚP HỌC">
+      <div class="hero-lockup reveal">
+        <p class="eyebrow"><span></span> EDUVISION AI / LỚP HỌC THÔNG MINH</p>
+        <h1>Lớp học<br><em>cùng bạn suy nghĩ.</em></h1>
+        <p class="lede">Một không gian dạy học nơi AI có thể nhìn, lắng nghe, hỗ trợ và biến lời nói của giáo viên thành hành động.</p>
+        <div class="hero-actions">
+          <a href="#vision" class="magnetic-btn">KHÁM PHÁ HỆ THỐNG <span>↓</span></a>
+          <p>CUỘN ĐỂ BƯỚC VÀO</p>
+        </div>
+      </div>
+      <div class="hero-caption glass-card reveal">
+        <span>KHÔNG GIAN TRỰC TUYẾN</span>
+        <strong>01</strong>
+        <p>Thị giác · Giọng nói · Tự động hóa · Mô phỏng</p>
+      </div>
+    </section>
+
+    <section class="scene scene--vision" id="vision" data-index="02" data-name="THỊ GIÁC AI">
+      <div class="copy-panel copy-panel--left reveal">
+        <p class="eyebrow">01 / NHẬN BIẾT LỚP HỌC</p>
+        <h2>AI nhận biết.<br><em>Giáo viên quyết định.</em></h2>
+        <p>Thị giác máy tính biến luồng camera thành các tín hiệu lớp học dễ hiểu để giáo viên biết nơi nào cần chú ý.</p>
+        <div class="feature-lines">
+          <span><i></i> Tín hiệu hỗ trợ tính trung thực học thuật</span>
+          <span><i></i> Tín hiệu về tư thế hoặc sự im lặng bất thường</span>
+          <span><i></i> Giáo viên luôn là người kiểm duyệt cuối cùng</span>
+        </div>
+      </div>
+      <div class="floating-ui vision-ui glass-card reveal">
+        <div class="ui-head"><span>EDUVISION / CAMERA 01</span><b>TRỰC TIẾP</b></div>
+        <div class="signal-row"><span>Học sinh 12</span><strong>Cần chú ý</strong></div>
+        <div class="signal-bar"><i></i></div>
+        <small>TÍN HIỆU QUAN SÁT · NÊN XEM LẠI</small>
+      </div>
+    </section>
+
+    <section class="scene scene--agent" id="agent" data-index="03" data-name="TRỢ LÝ AI">
+      <div class="copy-panel copy-panel--right reveal">
+        <p class="eyebrow">02 / TRỢ LÝ AI GIỌNG NÓI</p>
+        <h2>Chỉ cần nói.<br><em>Cả phòng phản hồi.</em></h2>
+        <p>Giáo viên không cần rời bài giảng để mở tài liệu, điều khiển thiết bị hay tạo hoạt động học tập.</p>
+      </div>
+      <div class="conversation glass-card reveal">
+        <div class="conversation-orb"><i></i></div>
+        <div>
+          <span>GIÁO VIÊN</span>
+          <p>“EduVision, mở mô hình Hệ Mặt Trời.”</p>
+        </div>
+        <div class="answer">
+          <span>EDUVISION</span>
+          <p>“Đã sẵn sàng. Bắt đầu mô phỏng 3D.”</p>
+        </div>
+        <div class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+    </section>
+
+    <section class="scene scene--simulation" id="simulation" data-index="04" data-name="HỌC TẬP 3D">
+      <div class="center-copy simulation-copy reveal">
+        <p class="eyebrow">03 / PHÒNG DẠY HỌC 3D</p>
+        <h2>Giáo viên giảng.<br><em>Mô hình chuyển động.</em></h2>
+        <p>Mở học liệu, gọi mô hình 3D và điều khiển toàn bộ bài giảng chỉ bằng giọng nói.</p>
+      </div>
+
+      <div class="lesson-dock glass-card reveal" aria-label="Học liệu bài giảng">
+        <div class="lesson-dock__head"><span>HỌC LIỆU</span><b>BÀI ĐANG DẠY</b></div>
+        <button class="lesson-tool" id="openLessonFile" type="button"><i>↗</i><span><strong>Mở tệp</strong><small>PDF, PPTX, DOCX</small></span></button>
+        <button class="lesson-tool" id="openLessonImage" type="button"><i>▧</i><span><strong>Mở hình ảnh</strong><small>PNG, JPG, WEBP</small></span></button>
+        <button class="lesson-tool is-active" type="button"><i>◈</i><span><strong>Tế bào thực vật</strong><small>Mô hình đang trình chiếu</small></span></button>
+        <input class="visually-hidden" id="lessonFileInput" type="file" accept=".pdf,.ppt,.pptx,.doc,.docx,image/*" />
+        <p class="file-feedback" id="fileFeedback">Sẵn sàng nhận học liệu mới</p>
+      </div>
+
+      <div class="mode-switch glass-card reveal" aria-label="Chọn chế độ trình chiếu">
+        <button class="is-active" type="button"><i>◇</i><span>Chế độ 3D<small>Đang bật</small></span></button>
+        <button type="button"><i>▻</i><span>Chế độ video<small>Trình chiếu</small></span></button>
+      </div>
+
+      <div class="model-controls glass-card reveal" aria-label="Điều khiển mô hình 3D">
+        <span>MÔ HÌNH TẾ BÀO / TRỰC TIẾP</span>
+        <div>
+          <button type="button"><i>↻</i>Xoay</button>
+          <button type="button"><i>＋</i>Thu phóng</button>
+          <button type="button"><i>◎</i>Tách lớp</button>
+        </div>
+        <p><b></b> Mô hình 3D đang tự động xoay</p>
+      </div>
+
+      <div class="voice-console glass-card reveal" id="voiceConsole">
+        <button class="voice-trigger" id="voiceTrigger" type="button" aria-label="Bật điều khiển bằng giọng nói" aria-pressed="false"><i></i></button>
+        <div>
+          <span>TRỢ LÝ GIỌNG NÓI</span>
+          <p id="voiceStatus">“EduVision, mở mô hình tế bào và bắt đầu bài giảng.”</p>
+          <small>Thử nói: “chọn học sinh 3”, “sang trái”, “mở tệp”, “xoay mô hình”...</small>
+        </div>
+        <div class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+      </div>
+
+      <div class="learning-gallery reveal" aria-label="Hình ảnh lớp học và mô hình minh họa">
+        <figure class="learning-visual learning-visual--wide">
+          <img src="/assets/classroom-ai-photoreal.webp" alt="Giáo viên đang giảng bài cùng mô hình tế bào 3D trong lớp học thông minh" loading="lazy" />
+          <figcaption><span>KHÔNG GIAN THỰC</span><strong>Một tiết học, nhiều lớp tương tác</strong><small>Camera, bảng cảm ứng và mô hình 3D phối hợp trong cùng một trải nghiệm.</small></figcaption>
+        </figure>
+        <figure class="learning-visual">
+          <img src="/assets/plant-cell-3d.webp" alt="Mô hình cắt lớp tế bào thực vật 3D chi tiết" loading="lazy" />
+          <figcaption><span>HỌC LIỆU 3D</span><strong>Quan sát đến từng cấu trúc</strong><small>Xoay, phóng to và tách lớp để khám phá bài học từ mọi góc nhìn.</small></figcaption>
+        </figure>
+      </div>
+    </section>
+
+    <section class="scene scene--control" id="control" data-index="05" data-name="ĐIỀU KHIỂN TỪ XA">
+      <div class="copy-panel copy-panel--left reveal">
+        <p class="eyebrow">04 / LỚP HỌC TỪ XA</p>
+        <h2>Điều khiển lớp học.<br><em>Từ mọi nơi.</em></h2>
+        <p>Xoay ngang, xoay dọc, phóng to và chuyển camera trong một bảng điều khiển thống nhất — trực tiếp hoặc qua Trợ lý AI.</p>
+      </div>
+      <div class="control-pad glass-card reveal">
+        <div class="control-title"><span>PTZ / CAMERA 02</span><b>TỪ XA</b></div>
+        <div class="pad-grid">
+          <button>↖</button><button>↑</button><button>↗</button>
+          <button>←</button><button class="pad-center">●</button><button>→</button>
+          <button>↙</button><button>↓</button><button>↘</button>
+        </div>
+        <div class="zoom"><span>PHÓNG TO</span><i></i><strong>72%</strong></div>
+      </div>
+    </section>
+
+    <section class="scene scene--twin" id="twin" data-index="06" data-name="BẢN SAO SỐ">
+      <div class="copy-panel copy-panel--right reveal">
+        <p class="eyebrow">05 / BẢN SAO SỐ</p>
+        <h2>Nhìn thấy lớp học<br><em>trước khi thành hình.</em></h2>
+        <p>Mô phỏng không gian 3D để hình dung bố trí thiết bị, vùng quan sát camera và kịch bản lớp học.</p>
+        <div class="feature-lines">
+          <span><i></i> Phạm vi quan sát của camera</span>
+          <span><i></i> Trực quan hóa điểm mù</span>
+          <span><i></i> Mô phỏng bố trí lớp học</span>
+        </div>
+      </div>
+      <div class="twin-data glass-card reveal">
+        <span>BẢN SAO SỐ / PHÒNG A-204</span>
+        <div><strong>96%</strong><small>PHẠM VI CAMERA</small></div>
+        <div><strong>02</strong><small>ĐIỂM MÙ</small></div>
+      </div>
+    </section>
+
+    <section class="scene scene--core" id="core" data-index="07" data-name="LÕI AI">
+      <div class="center-copy center-copy--core reveal">
+        <p class="eyebrow">06 / MỘT TRÍ TUỆ THỐNG NHẤT</p>
+        <h2>Một trí tuệ.<br><em>Trọn vẹn lớp học.</em></h2>
+        <p>Giọng nói, thị giác, tự động hóa và phân tích không hoạt động riêng lẻ — chúng cùng đi qua một lớp trí tuệ thống nhất.</p>
+      </div>
+      <div class="core-labels" aria-hidden="true">
+        <span class="core-label core-label--a">THỊ GIÁC</span>
+        <span class="core-label core-label--b">GIỌNG NÓI</span>
+        <span class="core-label core-label--c">TỰ ĐỘNG HÓA</span>
+        <span class="core-label core-label--d">MÔ PHỎNG</span>
+      </div>
+    </section>
+
+    <section class="scene scene--human" id="human" data-index="08" data-name="GIÁO VIÊN LÀ TRỌNG TÂM">
+      <div class="human-copy reveal">
+        <p class="eyebrow">07 / AI LẤY CON NGƯỜI LÀM TRỌNG TÂM</p>
+        <h2>Nhiều thời gian hơn<br><em>để giảng dạy.</em></h2>
+        <div class="human-lines">
+          <p>Nhiều thời gian hơn để kết nối.</p>
+          <p>Nhiều thời gian hơn cho học sinh.</p>
+        </div>
+        <p class="human-note">EduVision hỗ trợ phán đoán của giáo viên — không thay thế giáo viên.</p>
+      </div>
+    </section>
+
+    <section class="scene scene--cta" id="cta" data-index="09" data-name="EDUVISION AI">
+      <div class="cta-lockup reveal">
+        <img src="/assets/logo-icon.png" alt="EduVision AI" />
+        <p class="eyebrow">LỚP HỌC THÔNG MINH</p>
+        <h2>Sẵn sàng để lớp học<br><em>cùng suy nghĩ?</em></h2>
+        <p>Quan sát sâu hơn. Giảng dạy tự nhiên. Hành động tức thì.</p>
+        <a class="cta-button" href="#hero">KHÁM PHÁ EDUVISION <span>↗</span></a>
+      </div>
+    </section>
+  </main>
+
+  <aside class="object-inspector glass-card" id="objectInspector" aria-live="polite" aria-hidden="true">
+    <button class="object-inspector__close" id="closeInspector" type="button" aria-label="Đóng bảng thông tin">×</button>
+    <span>VẬT THỂ ĐANG CHỌN</span>
+    <h3 id="objectName">Học sinh 01</h3>
+    <p id="objectDescription">Kéo trực tiếp trên cảnh để thay đổi vị trí.</p>
+    <div class="object-position"><i></i><small id="objectPosition">X 0.00 · Z 0.00</small></div>
+    <div class="object-actions">
+      <button id="rotateObject" type="button">↻ Xoay</button>
+      <button id="resetObject" type="button">↶ Đặt lại</button>
+    </div>
+    <small class="object-hint">Giữ chuột và kéo để di chuyển từng nhân vật hoặc vật thể.</small>
+  </aside>
+
+  <div class="experience-controls" aria-label="Điều khiển trải nghiệm">
+    <button class="experience-toggle" id="interactionToggle" type="button" aria-pressed="false">
+      <i class="interaction-icon">✦</i><span><strong>Tương tác 3D</strong><small>Bấm để kéo vật thể</small></span>
+    </button>
+    <button class="experience-toggle" id="soundToggle" type="button" aria-pressed="false">
+      <i class="sound-icon"><b></b></i><span><strong>Âm thanh</strong><small id="soundLabel">Đang tắt</small></span>
+    </button>
+  </div>
+
+  <div class="cursor-dot" id="cursorDot" aria-hidden="true"></div>
+</body>
+</html>
