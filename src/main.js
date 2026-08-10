@@ -2,6 +2,8 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import anime from 'animejs';
 import * as CANNON from 'cannon-es';
 
@@ -212,34 +214,57 @@ Promise.all([logoMain.decode().catch(()=>{}),...ghosts.map(g=>g.decode().catch((
 // WebGL world
 // -----------------------------------------------------------------------------
 const canvas = $('#webgl');
-const renderer = new THREE.WebGLRenderer({canvas,antialias:true,alpha:false,powerPreference:'high-performance'});
-renderer.setPixelRatio(Math.min(devicePixelRatio,1.6));
+const mobileLayout=()=>innerWidth<=900;
+const deviceMemory=navigator.deviceMemory||8;
+const logicalCores=navigator.hardwareConcurrency||8;
+const preliminaryLowEnd=(mobileLayout()&&deviceMemory<=4)||logicalCores<=4;
+const renderer = new THREE.WebGLRenderer({canvas,antialias:!preliminaryLowEnd,alpha:false,powerPreference:'high-performance',precision:'highp'});
+const gl=renderer.getContext();
+const debugRendererInfo=gl.getExtension('WEBGL_debug_renderer_info');
+const gpuName=(debugRendererInfo?gl.getParameter(debugRendererInfo.UNMASKED_RENDERER_WEBGL):gl.getParameter(gl.RENDERER)||'').toLowerCase();
+const strongGPU=/rtx|radeon rx|apple m[1-9]|arc\(tm\)|geforce gtx 1[6-9]/.test(gpuName);
+const weakGPU=/swiftshader|llvmpipe|mali-[tg][0-5]|adreno \(tm\) [3-5]|intel\(r\) hd graphics/.test(gpuName);
+const qualityTier=preliminaryLowEnd||weakGPU?'low':strongGPU||(!mobileLayout()&&deviceMemory>=8&&logicalCores>=8&&renderer.capabilities.maxTextureSize>=8192)?'high':'medium';
+const maximumPixelRatio=qualityTier==='high'?2:qualityTier==='medium'?1.45:1;
+let adaptivePixelRatio=Math.min(devicePixelRatio||1,maximumPixelRatio);
+renderer.setPixelRatio(adaptivePixelRatio);
 renderer.setSize(innerWidth,innerHeight);
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure=.92;
-renderer.shadowMap.enabled=true;
+renderer.toneMappingExposure=qualityTier==='low'?1.16:1.22;
+renderer.shadowMap.enabled=qualityTier!=='low';
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.shadowMap.autoUpdate=true;
+canvas.dataset.quality=qualityTier;
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x020408);
-scene.fog = new THREE.FogExp2(0x020408,.037);
-const camera = new THREE.PerspectiveCamera(42,innerWidth/innerHeight,.1,120);
+scene.background = new THREE.Color(0x050b12);
+scene.fog = new THREE.FogExp2(0x050b12,.032);
+const camera = new THREE.PerspectiveCamera(mobileLayout()?52:42,innerWidth/innerHeight,.1,120);
 camera.position.set(0,5.1,14.5);
 const cameraTarget = new THREE.Vector3(0,1.45,-.6);
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene,camera));
 const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth,innerHeight),.64,.72,.78);
+bloom.enabled=qualityTier!=='low';
 composer.addPass(bloom);
 
-const hemi = new THREE.HemisphereLight(0xbfe9ff,0x071019,.8);
+const hemi = new THREE.HemisphereLight(0xe0f6ff,0x17212a,1.42);
 scene.add(hemi);
-const keyLight = new THREE.DirectionalLight(0xb8f5ff,2.15);
-keyLight.position.set(-5,8,5); keyLight.castShadow=true; scene.add(keyLight);
+const keyLight = new THREE.DirectionalLight(0xdaf8ff,3.05);
+keyLight.position.set(-5,8,5); keyLight.castShadow=true;
+const shadowResolution=qualityTier==='high'?2048:1024;
+keyLight.shadow.mapSize.set(shadowResolution,shadowResolution);
+keyLight.shadow.camera.near=.5; keyLight.shadow.camera.far=30;
+keyLight.shadow.camera.left=-11; keyLight.shadow.camera.right=11; keyLight.shadow.camera.top=11; keyLight.shadow.camera.bottom=-11;
+keyLight.shadow.bias=-.00035; keyLight.shadow.normalBias=.025; scene.add(keyLight);
 const violetLight = new THREE.PointLight(0x8f4fff,16,24,2); violetLight.position.set(7,3,-1); scene.add(violetLight);
 const cyanLight = new THREE.PointLight(0x37e9db,13,22,2); cyanLight.position.set(-6,3,2); scene.add(cyanLight);
 const warmLight = new THREE.PointLight(0xffd3a0,0,20,2); warmLight.position.set(-3,4,-2); scene.add(warmLight);
+const classroomFill=new THREE.DirectionalLight(0xfff3df,1.65); classroomFill.position.set(5,6,8); scene.add(classroomFill);
+const selectedCharacterLight=new THREE.PointLight(0x9affed,0,7,2); scene.add(selectedCharacterLight);
+const selectedCharacterBeam=mesh(new THREE.CylinderGeometry(.34,.56,3.1,24,1,true),new THREE.MeshBasicMaterial({color:0x62f3e4,transparent:true,opacity:0,side:THREE.DoubleSide,depthWrite:false,blending:THREE.AdditiveBlending})); selectedCharacterBeam.castShadow=false; selectedCharacterBeam.receiveShadow=false; scene.add(selectedCharacterBeam);
 
 function standard(color, opts={}) {
   return new THREE.MeshStandardMaterial({color,roughness:opts.roughness??.56,metalness:opts.metalness??.16,transparent:opts.transparent??false,opacity:opts.opacity??1,emissive:opts.emissive??0x000000,emissiveIntensity:opts.emissiveIntensity??0});
@@ -270,9 +295,24 @@ function boardTexture(){
   x.beginPath(); x.moveTo(986,390); x.lineTo(1115,398); x.stroke();
   const texture=new THREE.CanvasTexture(c); texture.colorSpace=THREE.SRGBColorSpace; return texture;
 }
+function earthBoardTexture(){
+  const c=document.createElement('canvas'); c.width=1400; c.height=660; const x=c.getContext('2d');
+  const bg=x.createLinearGradient(0,0,c.width,c.height); bg.addColorStop(0,'#061b2b'); bg.addColorStop(.56,'#08223a'); bg.addColorStop(1,'#140c31'); x.fillStyle=bg; x.fillRect(0,0,c.width,c.height);
+  x.strokeStyle='rgba(126,221,255,.12)'; x.lineWidth=2;
+  for(let i=0;i<c.width;i+=90){x.beginPath();x.moveTo(i,0);x.lineTo(i,c.height);x.stroke();}
+  for(let i=0;i<c.height;i+=74){x.beginPath();x.moveTo(0,i);x.lineTo(c.width,i);x.stroke();}
+  const glow=x.createRadialGradient(920,320,10,920,320,250); glow.addColorStop(0,'rgba(68,210,255,.34)'); glow.addColorStop(1,'rgba(68,210,255,0)'); x.fillStyle=glow; x.fillRect(620,20,600,600);
+  x.fillStyle='rgba(231,251,255,.95)'; x.font='600 52px system-ui'; x.fillText('TRÁI ĐẤT · HỆ SINH THÁI ĐỘNG',76,108);
+  x.fillStyle='rgba(121,229,255,.76)'; x.font='28px system-ui'; x.fillText('MÔ HÌNH NHIỀU LỚP · KHÍ QUYỂN · KHÍ HẬU · ĐÊM / NGÀY',78,156);
+  x.strokeStyle='rgba(106,231,255,.62)'; x.lineWidth=5; x.beginPath(); x.arc(930,350,176,0,Math.PI*2); x.stroke();
+  x.strokeStyle='rgba(138,117,255,.52)'; x.lineWidth=3; x.beginPath(); x.ellipse(930,350,258,82,-.18,0,Math.PI*2); x.stroke();
+  x.fillStyle='rgba(108,219,246,.2)'; x.beginPath(); x.arc(930,350,168,0,Math.PI*2); x.fill();
+  x.fillStyle='rgba(213,245,255,.72)'; x.font='24px system-ui'; x.fillText('Mây & khí quyển',1110,282); x.fillText('Ánh sáng đô thị',1095,432);
+  const texture=new THREE.CanvasTexture(c); texture.colorSpace=THREE.SRGBColorSpace; return texture;
+}
 
 // Global particle field
-const pCount=620, pPos=new Float32Array(pCount*3);
+const pCount=qualityTier==='low'?180:qualityTier==='medium'?380:680, pPos=new Float32Array(pCount*3);
 for(let i=0;i<pCount;i++){ pPos[i*3]=(Math.random()-.5)*48; pPos[i*3+1]=Math.random()*16-2; pPos[i*3+2]=(Math.random()-.5)*42; }
 const pGeo=new THREE.BufferGeometry(); pGeo.setAttribute('position',new THREE.BufferAttribute(pPos,3));
 const pMat=new THREE.PointsMaterial({color:0x85dfff,size:.025,transparent:true,opacity:.34,depthWrite:false,blending:THREE.AdditiveBlending});
@@ -301,7 +341,7 @@ for(let z=-4.8;z<=4.8;z+=3.2){
 
 // Cửa sổ lớn ở tường phải; màu ấm khiến không gian giống một buổi học ban ngày.
 const windowMat=new THREE.MeshBasicMaterial({color:0x80c9e7,transparent:true,opacity:.25,side:THREE.DoubleSide});
-const windowGlow=new THREE.PointLight(0xa9def5,3.6,13,2); windowGlow.position.set(7.7,3.2,1.8); classroom.add(windowGlow);
+const windowGlow=new THREE.PointLight(0xc7edff,5.2,15,2); windowGlow.position.set(7.7,3.2,1.8); classroom.add(windowGlow);
 for(let i=0;i<3;i++){
   const z=-3.5+i*3.55;
   classroom.add(mesh(new THREE.PlaneGeometry(2.55,3.35),windowMat,[8.34,3.35,z],[0,-Math.PI/2,0]));
@@ -312,9 +352,11 @@ for(let i=0;i<3;i++){
 const screenMat=standard(0x101722,{roughness:.28,metalness:.4,emissive:0x0d8694,emissiveIntensity:.45});
 const screen=mesh(new THREE.BoxGeometry(8.15,4.25,.22),screenMat,[0,3.2,-6.92]); classroom.add(screen);
 const screenInner=mesh(new THREE.PlaneGeometry(7.65,3.72),new THREE.MeshBasicMaterial({map:boardTexture(),transparent:true,opacity:.96}),[0,3.2,-6.795]); classroom.add(screenInner);
+const earthScreenMaterial=new THREE.MeshBasicMaterial({map:earthBoardTexture(),transparent:true,opacity:0,depthWrite:false});
+const earthScreen=mesh(new THREE.PlaneGeometry(7.65,3.72),earthScreenMaterial,[0,3.2,-6.782]); earthScreen.renderOrder=2; classroom.add(earthScreen);
 const boardLed=new THREE.PointLight(0x54d7e5,1.8,7,2); boardLed.position.set(0,3.1,-6.15); classroom.add(boardLed);
 
-const desks=[]; const students=[]; const halos=[];
+const desks=[]; const students=[]; const seats=[]; const halos=[];
 const deskTopMat=standard(0x8a6043,{roughness:.48,metalness:.05});
 const legMat=standard(0x182127,{roughness:.38,metalness:.65});
 const bookMat=standard(0x306f89,{roughness:.7});
@@ -331,29 +373,31 @@ for(let row=0;row<3;row++){
     dg.position.set(x,0,z); classroom.add(dg); desks.push(dg);
 
     const sg=new THREE.Group();
+    const primitiveAvatar=new THREE.Group();
     const studentMat=standard(clothing[(row*4+col)%clothing.length],{roughness:.76});
     const headMat=standard(skin[(row+col)%skin.length],{roughness:.84,metalness:0});
-    const studentTorso=mesh(new THREE.CapsuleGeometry(.29,.58,7,14),studentMat,[0,1.52,.08]); studentTorso.scale.z=.72; sg.add(studentTorso);
-    sg.add(mesh(new THREE.CylinderGeometry(.095,.11,.16,14),headMat,[0,1.98,.02]));
-    const studentHead=mesh(new THREE.SphereGeometry(.285,28,24),headMat,[0,2.2,-.02]); studentHead.scale.set(.88,1.08,.91); sg.add(studentHead);
-    const hair=mesh(new THREE.SphereGeometry(.294,28,18),standard((row+col)%3===0?0x30221e:0x17171a,{roughness:.95}),[0,2.3,.015]); hair.scale.set(.92,.72,.94); sg.add(hair);
-    [-.115,.115].forEach(lx=>sg.add(mesh(new THREE.SphereGeometry(.021,10,10),standard(0x11161a,{roughness:.7}),[lx,2.24,-.268])));
-    sg.add(mesh(new THREE.SphereGeometry(.042,12,12),headMat,[0,2.16,-.285]));
-    [-.27,.27].forEach(lx=>sg.add(mesh(new THREE.SphereGeometry(.048,12,12),headMat,[lx,2.2,-.01])));
+    const studentTorso=mesh(new THREE.CapsuleGeometry(.29,.58,7,14),studentMat,[0,1.52,.08]); studentTorso.scale.z=.72; primitiveAvatar.add(studentTorso);
+    primitiveAvatar.add(mesh(new THREE.CylinderGeometry(.095,.11,.16,14),headMat,[0,1.98,.02]));
+    const studentHead=mesh(new THREE.SphereGeometry(.285,28,24),headMat,[0,2.2,-.02]); studentHead.scale.set(.88,1.08,.91); primitiveAvatar.add(studentHead);
+    const hair=mesh(new THREE.SphereGeometry(.294,28,18),standard((row+col)%3===0?0x30221e:0x17171a,{roughness:.95}),[0,2.3,.015]); hair.scale.set(.92,.72,.94); primitiveAvatar.add(hair);
+    [-.115,.115].forEach(lx=>primitiveAvatar.add(mesh(new THREE.SphereGeometry(.021,10,10),standard(0x11161a,{roughness:.7}),[lx,2.24,-.268])));
+    primitiveAvatar.add(mesh(new THREE.SphereGeometry(.042,12,12),headMat,[0,2.16,-.285]));
+    [-.27,.27].forEach(lx=>primitiveAvatar.add(mesh(new THREE.SphereGeometry(.048,12,12),headMat,[lx,2.2,-.01])));
     [-.32,.32].forEach((lx,index)=>{
-      const arm=mesh(new THREE.CapsuleGeometry(.075,.5,5,10),studentMat,[lx,1.57,-.13],[-.82,0,index?-.08:.08]); sg.add(arm);
-      sg.add(mesh(new THREE.SphereGeometry(.09,14,14),headMat,[lx,1.29,-.43]));
+      const arm=mesh(new THREE.CapsuleGeometry(.075,.5,5,10),studentMat,[lx,1.57,-.13],[-.82,0,index?-.08:.08]); primitiveAvatar.add(arm);
+      primitiveAvatar.add(mesh(new THREE.SphereGeometry(.09,14,14),headMat,[lx,1.29,-.43]));
     });
     [-.16,.16].forEach(lx=>{
-      sg.add(mesh(new THREE.CapsuleGeometry(.09,.54,5,10),standard(0x222b32,{roughness:.8}),[lx,.65,.16],[.08,0,0]));
-      sg.add(mesh(new THREE.BoxGeometry(.18,.1,.32),standard(0x11171d,{roughness:.7}),[lx,.13,-.02]));
+      primitiveAvatar.add(mesh(new THREE.CapsuleGeometry(.09,.54,5,10),standard(0x222b32,{roughness:.8}),[lx,.65,.16],[.08,0,0]));
+      primitiveAvatar.add(mesh(new THREE.BoxGeometry(.18,.1,.32),standard(0x11171d,{roughness:.7}),[lx,.13,-.02]));
     });
     const chair=new THREE.Group();
     chair.add(mesh(new THREE.BoxGeometry(.82,.09,.72),standard(0x263a43,{roughness:.52,metalness:.23}),[0,.78,.35]));
     chair.add(mesh(new THREE.BoxGeometry(.82,.64,.09),standard(0x263a43,{roughness:.52,metalness:.23}),[0,1.14,.66]));
     [-.31,.31].forEach(lx=>[-.22,.54].forEach(lz=>chair.add(mesh(new THREE.BoxGeometry(.06,.74,.06),legMat,[lx,.39,lz]))));
-    sg.add(chair);
-    sg.position.set(x,0,z+.34); sg.rotation.y=(col%2?-.035:.035); sg.userData={baseY:0,phase:row*1.7+col*.84}; classroom.add(sg); students.push(sg);
+    sg.add(primitiveAvatar);
+    chair.position.set(x,0,z+.34); chair.rotation.y=(col%2?-.035:.035); classroom.add(chair); seats.push(chair);
+    sg.position.set(x,0,z+.34); sg.rotation.y=(col%2?-.035:.035); sg.userData={baseY:0,phase:row*1.7+col*.84,primitiveAvatar}; classroom.add(sg); students.push(sg);
 
     const haloMat=new THREE.MeshBasicMaterial({color:0x55efe1,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
     haloMat.userData.baseOpacity=1;
@@ -363,28 +407,87 @@ for(let row=0;row<3;row++){
 
 // Teacher
 const teacher=new THREE.Group();
+const teacherPrimitive=new THREE.Group();
 const teacherShirt=standard(0xd5e0e4,{roughness:.72});
 const teacherSkin=standard(0xb57d61,{roughness:.83});
 const teacherPants=standard(0x263447,{roughness:.7});
-const teacherTorso=mesh(new THREE.CapsuleGeometry(.36,.86,8,16),teacherShirt,[0,1.72,0]); teacherTorso.scale.z=.72; teacher.add(teacherTorso);
-teacher.add(mesh(new THREE.CylinderGeometry(.105,.12,.18,16),teacherSkin,[0,2.21,0]));
-const teacherHead=mesh(new THREE.SphereGeometry(.31,32,28),teacherSkin,[0,2.47,0]); teacherHead.scale.set(.88,1.08,.92); teacher.add(teacherHead);
-const teacherHair=mesh(new THREE.SphereGeometry(.325,30,22),standard(0x2b1d1d,{roughness:.96}),[0,2.61,-.035]); teacherHair.scale.set(.93,.76,.96); teacher.add(teacherHair);
-teacher.add(mesh(new THREE.SphereGeometry(.055,12,12),teacherSkin,[0,2.43,.3]));
-[-.12,.12].forEach(lx=>teacher.add(mesh(new THREE.SphereGeometry(.026,10,10),standard(0x101418,{roughness:.8}),[lx,2.52,.275])));
-[-.3,.3].forEach(lx=>teacher.add(mesh(new THREE.SphereGeometry(.05,12,12),teacherSkin,[lx,2.47,0])));
+const teacherTorso=mesh(new THREE.CapsuleGeometry(.36,.86,8,16),teacherShirt,[0,1.72,0]); teacherTorso.scale.z=.72; teacherPrimitive.add(teacherTorso);
+teacherPrimitive.add(mesh(new THREE.CylinderGeometry(.105,.12,.18,16),teacherSkin,[0,2.21,0]));
+const teacherHead=mesh(new THREE.SphereGeometry(.31,32,28),teacherSkin,[0,2.47,0]); teacherHead.scale.set(.88,1.08,.92); teacherPrimitive.add(teacherHead);
+const teacherHair=mesh(new THREE.SphereGeometry(.325,30,22),standard(0x2b1d1d,{roughness:.96}),[0,2.61,-.035]); teacherHair.scale.set(.93,.76,.96); teacherPrimitive.add(teacherHair);
+teacherPrimitive.add(mesh(new THREE.SphereGeometry(.055,12,12),teacherSkin,[0,2.43,.3]));
+[-.12,.12].forEach(lx=>teacherPrimitive.add(mesh(new THREE.SphereGeometry(.026,10,10),standard(0x101418,{roughness:.8}),[lx,2.52,.275])));
+[-.3,.3].forEach(lx=>teacherPrimitive.add(mesh(new THREE.SphereGeometry(.05,12,12),teacherSkin,[lx,2.47,0])));
 [-.18,.18].forEach(lx=>{
-  teacher.add(mesh(new THREE.CapsuleGeometry(.115,.7,6,12),teacherPants,[lx,.65,0]));
-  teacher.add(mesh(new THREE.BoxGeometry(.24,.12,.42),standard(0x151a20,{roughness:.6}),[lx,.1,.08]));
+  teacherPrimitive.add(mesh(new THREE.CapsuleGeometry(.115,.7,6,12),teacherPants,[lx,.65,0]));
+  teacherPrimitive.add(mesh(new THREE.BoxGeometry(.24,.12,.42),standard(0x151a20,{roughness:.6}),[lx,.1,.08]));
 });
 const teacherArm=mesh(new THREE.CapsuleGeometry(.095,.65,4,8),teacherSkin,[.48,1.9,.02],[0,0,-.82]);
 const teacherArmLeft=mesh(new THREE.CapsuleGeometry(.095,.65,4,8),teacherSkin,[-.46,1.88,.02],[0,0,.62]);
-teacher.add(teacherArm,teacherArmLeft);
-teacher.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[.71,2.22,.02]));
-teacher.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[-.68,2.12,.02]));
-teacher.userData.arm=teacherArm; teacher.userData.leftArm=teacherArmLeft;
+teacherPrimitive.add(teacherArm,teacherArmLeft);
+teacherPrimitive.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[.71,2.22,.02]));
+teacherPrimitive.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[-.68,2.12,.02]));
+teacher.add(teacherPrimitive);
+teacher.userData.arm=teacherArm; teacher.userData.leftArm=teacherArmLeft; teacher.userData.primitiveAvatar=teacherPrimitive;
 teacher.position.set(-2.75,0,-4.15); teacher.scale.setScalar(1.08); classroom.add(teacher);
 const podium=mesh(new THREE.BoxGeometry(1.35,1.05,.75),standard(0x513a2c,{roughness:.48,metalness:.16}),[-4.65,.52,-4.6]); classroom.add(podium);
+
+// Mô hình GLB có hệ xương thay thế các hình capsule ngay khi tải xong. Các hình
+// capsule vẫn là lớp dự phòng để cảnh không bao giờ bị trống trên mạng chậm.
+const characterMixers=[];
+const gltfLoader=new GLTFLoader();
+const maxAnisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),qualityTier==='high'?16:qualityTier==='medium'?8:2);
+function prepareHumanoid(source,targetHeight,facingY=0,sourceHeight=1.8,animationSpeed=1){
+  const model=cloneSkeleton(source.scene);
+  model.traverse(object=>{
+    if(!object.isMesh) return;
+    object.castShadow=qualityTier!=='low'; object.receiveShadow=qualityTier!=='low';
+    const materials=Array.isArray(object.material)?object.material:[object.material];
+    materials.forEach(material=>{
+      if(material.map) material.map.anisotropy=maxAnisotropy;
+      if('roughness' in material) material.roughness=Math.max(.46,material.roughness??.6);
+      if(material.emissive){ material.emissive.set(0x101c22); material.emissiveIntensity=.2; }
+      material.needsUpdate=true;
+    });
+  });
+  // Các nhân vật Mixamo có mesh skinned và xương nằm ở hai hệ đơn vị khác nhau;
+  // dùng chiều cao chuẩn của asset tránh Box3 đọc sai biên ở tư thế bind.
+  model.scale.setScalar(targetHeight/sourceHeight);
+  const holder=new THREE.Group(); holder.rotation.y=facingY; holder.add(model);
+  if(source.animations.length){
+    const mixer=new THREE.AnimationMixer(model);
+    const idle=source.animations.find(clip=>/idle/i.test(clip.name))||source.animations[0];
+    const action=mixer.clipAction(idle); action.play();
+    if(animationSpeed>0){ action.timeScale=animationSpeed; action.fadeIn(.35); characterMixers.push(mixer); }
+    else { mixer.setTime(.12); action.paused=true; mixer.update(0); }
+  }
+  return holder;
+}
+function characterBones(model){
+  const bones={};
+  model.traverse(object=>{
+    if(!object.isBone) return;
+    const name=object.name.toLowerCase();
+    if(/head$/.test(name)||/neck_joint_2$/.test(name)) bones.head=object;
+    if(/rightarm$/.test(name)||/skeleton_arm_joint_r$/.test(name)) bones.rightArm=object;
+    if(/leftarm$/.test(name)||/skeleton_arm_joint_l/.test(name)) bones.leftArm=object;
+    if(/spine2$/.test(name)||/torso_joint_3$/.test(name)) bones.spine=object;
+  });
+  Object.values(bones).forEach(bone=>{ bone.userData.restRotation=bone.rotation.clone(); });
+  return bones;
+}
+gltfLoader.loadAsync('/assets/michelle.glb').then(teacherAsset=>{
+  const studentAsset=teacherAsset;
+  const teacherModel=prepareHumanoid(teacherAsset,2.62,Math.PI,1.66,.24);
+  teacherModel.position.set(0,0,.02); teacher.add(teacherModel);
+  teacher.userData.bones=characterBones(teacherModel);
+  teacher.userData.primitiveAvatar.visible=false;
+  students.forEach((student,index)=>{
+    const human=prepareHumanoid(studentAsset,2.12+(index%3)*.035,0,1.66,0);
+    human.position.set(0,-.34,.03); human.rotation.y+=(index%2?-.045:.045);
+    student.add(human); student.userData.bones=characterBones(human); student.userData.humanoid=human; student.userData.primitiveAvatar.visible=false;
+  });
+}).catch(error=>console.warn('Không thể tải mô hình nhân vật GLB, đang dùng bản dựng dự phòng.',error));
 
 // Ceiling camera
 const classroomCam=new THREE.Group();
@@ -428,6 +531,15 @@ let modelUserScale=1;
 let modelSpinSpeed=1;
 let modelExplode=0;
 
+// Tia chỉ bài và vòng sân khấu khiến giáo viên thật sự đang thuyết trình,
+// thay vì chỉ đứng cạnh mô hình.
+const presentationBeamGeometry=new THREE.BufferGeometry();
+presentationBeamGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(6),3));
+const presentationBeamMaterial=new THREE.LineBasicMaterial({color:0x8bfff1,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
+const presentationBeam=new THREE.Line(presentationBeamGeometry,presentationBeamMaterial); presentationBeam.frustumCulled=false; scene.add(presentationBeam);
+const presentationTarget=mesh(new THREE.RingGeometry(.08,.13,32),new THREE.MeshBasicMaterial({color:0xb8fff6,transparent:true,opacity:0,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false})); scene.add(presentationTarget);
+const teacherStage=mesh(new THREE.RingGeometry(.62,.68,64),new THREE.MeshBasicMaterial({color:0x51e7db,transparent:true,opacity:0,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,depthWrite:false}),[-2.75,.025,-4.15],[-Math.PI/2,0,0]); classroom.add(teacherStage);
+
 // Cannon-es tạo chuyển động vật lý cho các vi hạt bên trong mô hình tế bào.
 const physicsWorld=new CANNON.World({gravity:new CANNON.Vec3(0,0,0)});
 const bioParticles=[];
@@ -441,12 +553,56 @@ for(let i=0;i<14;i++){
   solar.add(visual); bioParticles.push({body,visual});
 }
 
-// Remote control camera showcase group
+// Trái Đất 3D: bề mặt, địa hình pháp tuyến, ánh đèn ban đêm, mây và khí quyển
+// là các lớp riêng nên chuyển động có chiều sâu và vẫn giữ hiệu năng tốt.
 const remoteRig=new THREE.Group(); scene.add(remoteRig); remoteRig.position.set(3.8,2.7,-.5); remoteRig.scale.setScalar(.001);
-const rigBody=mesh(new THREE.CylinderGeometry(1.05,1.15,1.05,48),standard(0x17232c,{roughness:.26,metalness:.68}),[0,0,0]); remoteRig.add(rigBody);
-const rigLens=mesh(new THREE.CylinderGeometry(.46,.46,.5,48),standard(0x02070c,{roughness:.08,metalness:.82,emissive:0x153f53,emissiveIntensity:.6}),[0,-.05,.65],[Math.PI/2,0,0]); remoteRig.add(rigLens);
-const rigRingMat=new THREE.MeshBasicMaterial({color:0x46ede2,transparent:true,opacity:.3,blending:THREE.AdditiveBlending,depthWrite:false}); rigRingMat.userData.baseOpacity=.3;
-for(let i=0;i<3;i++){ const rr=mesh(new THREE.TorusGeometry(1.5+i*.28,.018,8,96),rigRingMat.clone(),[0,0,0],[Math.PI/2,i*.25,0]); remoteRig.add(rr); }
+const earthTilt=new THREE.Group(); earthTilt.rotation.z=THREE.MathUtils.degToRad(-23.44); remoteRig.add(earthTilt);
+const earthSpin=new THREE.Group(); earthTilt.add(earthSpin);
+const earthSegments=qualityTier==='low'?48:qualityTier==='medium'?80:128;
+const textureLoader=new THREE.TextureLoader();
+const earthDay=textureLoader.load('/assets/earth-day.jpg'); earthDay.colorSpace=THREE.SRGBColorSpace; earthDay.anisotropy=maxAnisotropy;
+const earthNormal=textureLoader.load('/assets/earth-normal.jpg'); earthNormal.anisotropy=maxAnisotropy;
+const earthSpecular=textureLoader.load('/assets/earth-specular.jpg'); earthSpecular.anisotropy=maxAnisotropy;
+const earthNight=textureLoader.load('/assets/earth-night.png'); earthNight.colorSpace=THREE.SRGBColorSpace; earthNight.anisotropy=maxAnisotropy;
+const earthGeometry=new THREE.SphereGeometry(1.34,earthSegments,Math.round(earthSegments*.72));
+const earthSurface=mesh(earthGeometry,new THREE.MeshPhongMaterial({
+  map:earthDay,normalMap:earthNormal,normalScale:new THREE.Vector2(.68,.68),specularMap:earthSpecular,
+  specular:new THREE.Color(0x315a73),shininess:7
+})); earthSpin.add(earthSurface);
+const nightSurface=mesh(new THREE.SphereGeometry(1.344,earthSegments,Math.round(earthSegments*.72)),new THREE.MeshBasicMaterial({
+  map:earthNight,transparent:true,opacity:.55,blending:THREE.AdditiveBlending,depthWrite:false
+})); earthSpin.add(nightSurface);
+
+function cloudTexture(){
+  const canvas=document.createElement('canvas'); canvas.width=qualityTier==='low'?512:1024; canvas.height=canvas.width/2;
+  const context=canvas.getContext('2d'); context.clearRect(0,0,canvas.width,canvas.height);
+  let seed=87431; const random=()=>((seed=(seed*16807)%2147483647)-1)/2147483646;
+  context.filter='blur(10px)'; context.fillStyle='#fff';
+  for(let band=0;band<9;band++){
+    const baseY=(band+.7)*canvas.height/9+(random()-.5)*canvas.height*.055;
+    for(let i=0;i<45;i++){
+      const x=random()*canvas.width,y=baseY+(random()-.5)*canvas.height*.09;
+      const width=canvas.width*(.02+random()*.09),height=canvas.height*(.01+random()*.045);
+      context.globalAlpha=.025+random()*.08; context.beginPath(); context.ellipse(x,y,width,height,random()*.8,0,Math.PI*2); context.fill();
+    }
+  }
+  context.filter='none'; context.globalAlpha=1;
+  const texture=new THREE.CanvasTexture(canvas); texture.colorSpace=THREE.SRGBColorSpace; texture.anisotropy=maxAnisotropy; return texture;
+}
+const cloudLayer=mesh(new THREE.SphereGeometry(1.365,earthSegments,Math.round(earthSegments*.72)),new THREE.MeshPhongMaterial({
+  map:cloudTexture(),transparent:true,opacity:.34,depthWrite:false,blending:THREE.NormalBlending,side:THREE.DoubleSide
+})); earthTilt.add(cloudLayer);
+const atmosphere=mesh(new THREE.SphereGeometry(1.49,earthSegments,Math.round(earthSegments*.72)),new THREE.ShaderMaterial({
+  transparent:true,depthWrite:false,side:THREE.BackSide,blending:THREE.AdditiveBlending,
+  vertexShader:`varying vec3 vNormal; varying vec3 vWorldPosition; void main(){vNormal=normalize(mat3(modelMatrix)*normal); vec4 world=modelMatrix*vec4(position,1.0); vWorldPosition=world.xyz; gl_Position=projectionMatrix*viewMatrix*world;}`,
+  fragmentShader:`varying vec3 vNormal; varying vec3 vWorldPosition; void main(){vec3 viewDirection=normalize(cameraPosition-vWorldPosition); float rim=pow(0.72-max(dot(vNormal,viewDirection),0.0),2.7); gl_FragColor=vec4(0.16,0.62,1.0,rim*0.88);}`
+})); remoteRig.add(atmosphere);
+const moonOrbit=new THREE.Group(); remoteRig.add(moonOrbit);
+const moon=mesh(new THREE.SphereGeometry(.21,40,30),new THREE.MeshStandardMaterial({color:0xb8bec4,roughness:.96,metalness:0}),[2.15,.28,0]); moonOrbit.add(moon);
+const earthKey=new THREE.DirectionalLight(0xfff5df,1.85); earthKey.position.set(-4,3,5); remoteRig.add(earthKey);
+const earthRim=new THREE.PointLight(0x4daaff,3.2,9,2); earthRim.position.set(2.6,1.3,-2.7); remoteRig.add(earthRim);
+const orbitLine=mesh(new THREE.TorusGeometry(2.15,.009,8,160),new THREE.MeshBasicMaterial({color:0x75dfff,transparent:true,opacity:.19,blending:THREE.AdditiveBlending,depthWrite:false}),[0,.28,0],[Math.PI/2,0,0]); remoteRig.add(orbitLine);
+let earthManualX=0,earthManualY=0,earthZoom=1;
 
 // Digital twin wireframe room
 const twin=new THREE.Group(); scene.add(twin); twin.position.set(0,.02,0); twin.scale.setScalar(.985);
@@ -485,17 +641,75 @@ function registerInteractive(object,name,description,kind='Vật thể 3D'){
   };
   interactables.push(object);
 }
-registerInteractive(teacher,'Cô giáo Lan','Giáo viên 3D đang dẫn dắt bài học và tương tác với mô hình.','Nhân vật');
-students.forEach((student,index)=>registerInteractive(student,`Học sinh ${String(index+1).padStart(2,'0')}`,'Nhân vật học sinh trong lớp. Kéo để thay đổi chỗ ngồi hoặc bố cục lớp học.','Nhân vật'));
+registerInteractive(teacher,'Cô giáo Lan','Giáo viên 3D đang dẫn dắt bài học. Kéo lên để nhấc; khi thả, cô sẽ quay lại bục giảng.','Nhân vật');
+students.forEach((student,index)=>registerInteractive(student,`Học sinh ${String(index+1).padStart(2,'0')}`,'Giữ rồi kéo ngang hoặc kéo lên để nhấc học sinh. Khi thả, bạn ấy sẽ tự trở về ghế.','Nhân vật'));
 desks.forEach((desk,index)=>registerInteractive(desk,`Bàn học ${String(index+1).padStart(2,'0')}`,'Bàn học có thể được sắp xếp lại cho từng hoạt động nhóm.','Nội thất'));
 registerInteractive(podium,'Bục giảng','Bục điều khiển học liệu và thiết bị lớp học.','Nội thất');
 registerInteractive(classroomCam,'Camera AI trên trần','Camera quan sát hỗ trợ phân tích không gian lớp học.','Thiết bị');
 registerInteractive(screen,'Bảng tương tác','Màn hình bài giảng chính của lớp học.','Thiết bị');
 registerInteractive(solar,'Mô hình tế bào thực vật','Mô hình 3D có thể xoay, phóng to và tách lớp cấu tạo.','Học liệu 3D');
 registerInteractive(agentGroup,'Trợ lý EduVision','Trợ lý AI tiếp nhận lệnh giọng nói của giáo viên.','Trợ lý AI');
-registerInteractive(remoteRig,'Camera PTZ','Camera điều khiển từ xa với khả năng xoay và thu phóng.','Thiết bị');
+registerInteractive(remoteRig,'Trái Đất 3D','Địa cầu nhiều lớp với mây, ánh đèn ban đêm, khí quyển và Mặt Trăng chuyển động độc lập.','Học liệu 3D');
 
 rememberOpacity(classroom); rememberOpacity(agentGroup); rememberOpacity(solar); rememberOpacity(remoteRig); rememberOpacity(core);
+
+const classroomCharacters=new Set([teacher,...students]);
+const characterReturns=new Map();
+function isClassroomCharacter(object){ return classroomCharacters.has(object); }
+function beginWalkHome(character){
+  const home=character.userData.initialTransform.position.clone();
+  const start=character.position.clone(); start.y=home.y;
+  const distance=start.distanceTo(home);
+  if(distance<.04){
+    character.position.copy(home); character.rotation.copy(character.userData.initialTransform.rotation); characterReturns.delete(character); return;
+  }
+  const side=Math.sin(character.userData.phase??2.4)>=0?1:-1;
+  const midpoint=start.clone().lerp(home,.5);
+  const curve=new THREE.CatmullRomCurve3([
+    start,
+    start.clone().add(new THREE.Vector3(side*.5,0,-.18)),
+    midpoint.add(new THREE.Vector3(side*(.72+Math.min(distance,.9)),0,.32)),
+    home.clone()
+  ]);
+  characterReturns.set(character,{phase:'walk',home,curve,elapsed:0,duration:clamp(.9+distance*.25,1.1,2.8)});
+}
+function returnCharacterHome(character){
+  if(!isClassroomCharacter(character)) return;
+  const home=character.userData.initialTransform.position.clone();
+  characterReturns.set(character,{phase:'drop',home,velocityY:Math.min(0,(character.position.y-home.y)*-.45)});
+  character.userData.isReturning=true;
+}
+function liftAndRelease(character){
+  if(!isClassroomCharacter(character)) return;
+  characterReturns.delete(character); anime.remove(character.position);
+  const home=character.userData.initialTransform.position;
+  anime({targets:character.position,y:Math.max(character.position.y,home.y)+1.55,x:character.position.x+(character===teacher ? .42 : .28),duration:520,easing:'easeOutExpo',complete:()=>{
+    playUISound(260,.16,.05); setTimeout(()=>returnCharacterHome(character),260);
+  }});
+}
+function updateCharacterReturns(dt,t){
+  characterReturns.forEach((state,character)=>{
+    if(state.phase==='drop'){
+      state.velocityY-=7.8*dt; character.position.y+=state.velocityY*dt;
+      character.rotation.z+=dt*1.15;
+      if(character.position.y<=state.home.y){
+        character.position.y=state.home.y; character.rotation.z*=.25; playUISound(180,.11,.035); beginWalkHome(character);
+      }
+      return;
+    }
+    state.elapsed+=dt;
+    const progress=clamp(state.elapsed/state.duration),eased=easeInOutCubic(progress);
+    const point=state.curve.getPoint(eased),tangent=state.curve.getTangent(Math.min(.995,eased));
+    point.y=state.home.y+Math.abs(Math.sin(progress*Math.PI*6))*.035;
+    character.position.copy(point);
+    character.rotation.y=THREE.MathUtils.lerp(character.rotation.y,Math.atan2(-tangent.x,-tangent.z),Math.min(1,dt*7));
+    character.rotation.z=Math.sin(t*8+(character.userData.phase||0))*.018;
+    if(progress>=1){
+      character.position.copy(state.home); character.rotation.copy(character.userData.initialTransform.rotation);
+      character.userData.isReturning=false; characterReturns.delete(character); playUISound(460,.09,.025);
+    }
+  });
+}
 
 // State objects that GSAP can scrub and feed into material opacity.
 const fx={scan:0,twin:0,room:1,agent:0,solar:0,remote:0,core:0,warm:0};
@@ -506,7 +720,13 @@ function applyFX(){
   halos.forEach((h,i)=>{ h.material.opacity=fx.scan*(i===5?.9:.28); h.scale.x=1+Math.sin(performance.now()*.002+i)*.03; });
   agentGroup.scale.setScalar(Math.max(.001,fx.agent));
   solar.scale.setScalar(Math.max(.001,fx.solar*modelUserScale));
-  remoteRig.scale.setScalar(Math.max(.001,fx.remote));
+  const earthReveal=fx.remote<=.001 ? .001 : easeOutBack(clamp(fx.remote));
+  remoteRig.scale.setScalar(Math.max(.001,earthReveal*earthZoom));
+  earthScreenMaterial.opacity=smooth(clamp((fx.remote-.12)/.72))*.92;
+  screenInner.material.opacity=.96*(1-smooth(clamp((fx.remote-.08)/.78))*.9);
+  presentationBeamMaterial.opacity=fx.solar*.58;
+  presentationTarget.material.opacity=fx.solar*.8;
+  teacherStage.material.opacity=fx.solar*.32;
   core.scale.setScalar(Math.max(.001,fx.core));
   warmLight.intensity=5.6*fx.warm;
   cyanLight.intensity=13*(1-fx.warm*.55);
@@ -522,6 +742,7 @@ let sectionAnchors = [];
 let smoothScrollY = window.scrollY;
 let targetScrollY = window.scrollY;
 let lastAudibleScene=-1;
+let activeSceneIndex=0;
 
 function computeAnchors(){
   sectionAnchors = sceneSections.map(section => ({
@@ -536,12 +757,14 @@ const keyframes = [
   { id:'vision', cam:[6.7,5.3,7.6], target:[0,1.25,.1], fx:{scan:1,twin:0,agent:0,solar:0,remote:0,core:0,warm:0}, bloom:.96, roomScale:1, roomPos:[0,0,0], scanY:Math.PI*.34, scanZ:-1.7, screenGlow:.45, rigRot:[0,0,0] },
   { id:'agent', cam:[-6.2,3.55,4.6], target:[-2.1,2.1,-3.7], fx:{scan:0,twin:0,agent:1,solar:0,remote:0,core:0,warm:0}, bloom:1.05, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.7, rigRot:[0,0,0] },
   { id:'simulation', cam:[4.3,3.35,6.9], target:[-.15,2.05,-4.05], fx:{scan:0,twin:0,agent:.02,solar:1,remote:0,core:0,warm:0}, bloom:1.02, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:1.35, rigRot:[0,0,0] },
-  { id:'control', cam:[7.8,4.35,7.4], target:[3.8,2.7,-.5], fx:{scan:0,twin:0,agent:.1,solar:.05,remote:1,core:0,warm:0}, bloom:.86, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.6, rigRot:[.18,Math.PI*1.5,0] },
-  { id:'twin', cam:[8.5,10.8,8.9], target:[0,.2,0], fx:{scan:0,twin:1,agent:0,solar:0,remote:.05,core:0,warm:0}, bloom:.95, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.35, rigRot:[.18,Math.PI*1.5,0] },
+  { id:'control', cam:[7.8,4.35,7.4], target:[3.8,2.7,-.5], fx:{scan:0,twin:0,agent:.1,solar:.05,remote:1,core:0,warm:0}, bloom:.92, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.6, rigRot:[0,0,0] },
+  { id:'twin', cam:[8.5,10.8,8.9], target:[0,.2,0], fx:{scan:0,twin:1,agent:0,solar:0,remote:.05,core:0,warm:0}, bloom:.95, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.35, rigRot:[0,0,0] },
   { id:'core', cam:[0,4.6,15.8], target:[0,2,-.3], fx:{scan:0,twin:.12,agent:0,solar:0,remote:0,core:1,warm:0}, bloom:1.32, roomScale:.43, roomPos:[0,-1.15,-2.8], scanY:0, scanZ:2.6, screenGlow:.3, rigRot:[0,0,0] },
   { id:'human', cam:[-4.8,3.1,6.5], target:[-2.5,1.7,-2.8], fx:{scan:0,twin:0,agent:0,solar:0,remote:0,core:.02,warm:1}, bloom:.48, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.28, rigRot:[0,0,0] },
   { id:'cta', cam:[0,5.4,19.5], target:[0,1.8,-2], fx:{scan:0,twin:0,agent:0,solar:0,remote:0,core:0,warm:0}, bloom:.72, roomScale:.3, roomPos:[0,-1.6,-4.5], scanY:0, scanZ:2.6, screenGlow:.18, rigRot:[0,0,0] }
 ];
+const earthCinematicOrigin=new THREE.Vector3(1.9,2.75,-3.7);
+const earthCinematicHome=new THREE.Vector3(3.8,2.7,-.5);
 
 function mix(a,b,t){ return a+(b-a)*t; }
 function mixArray(a,b,t){ return a.map((v,i)=>mix(v,b[i],t)); }
@@ -576,11 +799,16 @@ function applyScrollWorld(y){
   scanCone.rotation.y=mix(a.scanY,b.scanY,t); scanCone.position.z=mix(a.scanZ,b.scanZ,t);
   screenMat.emissiveIntensity=mix(a.screenGlow,b.screenGlow,t);
   const rr=mixArray(a.rigRot,b.rigRot,t); remoteRig.rotation.set(rr[0],rr[1]+(remoteRig.userData.manualRotationY||0),rr[2]);
+  if(!(draggingObject&&selectedObject===remoteRig)){
+    if(ia===3&&ib===4) remoteRig.position.lerpVectors(earthCinematicOrigin,earthCinematicHome,easeInOutCubic(t));
+    else if(ib<=3) remoteRig.position.copy(earthCinematicOrigin);
+  }
   floorGrid.material.opacity=mix(ia>=5?.08:.28,ib>=5?.08:.28,t);
 
   const maxScroll=Math.max(1,document.documentElement.scrollHeight-innerHeight);
   $('#railProgress').style.transform=`scaleY(${clamp(y/maxScroll)})`;
   const active=t>.5?ib:ia;
+  activeSceneIndex=active;
   const section=sceneSections[active] || sceneSections[0];
   if(section){
     $('#sceneIndex').textContent=section.dataset.index; $('#sceneName').textContent=section.dataset.name;
@@ -672,7 +900,7 @@ interactionToggle.addEventListener('click',()=>{
   const enabled=!document.body.classList.contains('interaction-mode');
   document.body.classList.toggle('interaction-mode',enabled);
   interactionToggle.setAttribute('aria-pressed',String(enabled));
-  interactionToggle.querySelector('small').textContent=enabled?'Kéo trực tiếp trên lớp học':'Bấm để kéo vật thể';
+  interactionToggle.querySelector('small').textContent=enabled?'Kéo lên để nhấc nhân vật':'Bấm để kéo vật thể';
   if(!enabled) closeObjectInspector();
   playUISound(enabled?560:320,.13,.065);
 });
@@ -716,16 +944,33 @@ function runVoiceCommand(rawCommand){
     const index=clamp(Number(studentMatch[1])-1,0,students.length-1);
     if(!document.body.classList.contains('interaction-mode')) interactionToggle.click();
     selectObject(students[index]);
-    voiceStatus.textContent=`Đã chọn học sinh ${String(index+1).padStart(2,'0')}. Bạn có thể nói “sang trái” hoặc kéo trực tiếp.`;
+    if(command.includes('nhấc')||command.includes('nâng')) liftAndRelease(students[index]);
+    voiceStatus.textContent=command.includes('nhấc')||command.includes('nâng')?`Đã nhấc học sinh ${String(index+1).padStart(2,'0')}; bạn ấy sẽ tự về chỗ.`:`Đã chọn học sinh ${String(index+1).padStart(2,'0')}. Bạn có thể nói “sang trái” hoặc kéo trực tiếp.`;
   }else if(command.includes('chọn giáo viên')||command.includes('cô giáo')){
     if(!document.body.classList.contains('interaction-mode')) interactionToggle.click();
-    selectObject(teacher); voiceStatus.textContent='Đã chọn cô giáo Lan.';
+    selectObject(teacher);
+    if(command.includes('nhấc')||command.includes('nâng')) liftAndRelease(teacher);
+    voiceStatus.textContent=command.includes('nhấc')||command.includes('nâng')?'Đã nhấc cô giáo Lan; cô sẽ quay lại bục giảng.':'Đã chọn cô giáo Lan.';
   }else if(selectedObject&&(command.includes('sang trái')||command.includes('sang phải')||command.includes('tiến lên')||command.includes('lùi lại'))){
     if(command.includes('sang trái')) selectedObject.position.x-=.65;
     if(command.includes('sang phải')) selectedObject.position.x+=.65;
     if(command.includes('tiến lên')) selectedObject.position.z-=.65;
     if(command.includes('lùi lại')) selectedObject.position.z+=.65;
     updateObjectInspector(); voiceStatus.textContent=`Đã di chuyển ${selectedObject.userData.displayName}.`;
+  }else if(selectedObject&&isClassroomCharacter(selectedObject)&&(command.includes('thả')||command.includes('về chỗ')||command.includes('quay lại'))){
+    returnCharacterHome(selectedObject); voiceStatus.textContent=`${selectedObject.userData.displayName} đang tự tìm đường về vị trí ban đầu.`;
+  }else if(command.includes('trái đất')||command.includes('địa cầu')){
+    $('#control').scrollIntoView({behavior:reducedMotion?'auto':'smooth',block:'center'});
+    if(!document.body.classList.contains('interaction-mode')) interactionToggle.click();
+    selectObject(remoteRig);
+    if(command.includes('phóng to')||command.includes('to lên')) earthZoom=Math.min(1.35,earthZoom+.18);
+    if(command.includes('thu nhỏ')||command.includes('nhỏ lại')) earthZoom=Math.max(.72,earthZoom-.18);
+    if(command.includes('trái')) earthManualY-=.45;
+    if(command.includes('phải')) earthManualY+=.45;
+    if(command.includes('lên')) earthManualX=Math.max(-.75,earthManualX-.24);
+    if(command.includes('xuống')) earthManualX=Math.min(.75,earthManualX+.24);
+    if(earthZoomControl){ earthZoomControl.value=String(earthZoom); $('#earthZoomValue').textContent=`${Math.round(earthZoom*100)}%`; }
+    voiceStatus.textContent='Đã mở Trái Đất 3D và thực hiện lệnh điều khiển.';
   }else if(command.includes('mở tệp')||command.includes('mở file')||command.includes('tài liệu')){
     voiceStatus.textContent='Đã nhận lệnh mở học liệu.';
     openLessonPicker(false);
@@ -782,6 +1027,17 @@ $$('.model-controls button').forEach((button,index)=>button.addEventListener('cl
   if(index===1){ modelUserScale=modelUserScale>1.1?.82:1.28; voiceStatus.textContent=modelUserScale>1?'Đã phóng to mô hình.':'Đã đưa mô hình về kích thước vừa.'; }
   if(index===2){ modelExplode=modelExplode>.2?0:1; voiceStatus.textContent=modelExplode?'Đang tách lớp cấu tạo tế bào.':'Đã ghép lại mô hình tế bào.'; }
 }));
+$$('.pad-grid button').forEach(button=>button.addEventListener('click',()=>{
+  const dx=Number(button.dataset.earthX||0),dy=Number(button.dataset.earthY||0);
+  if(button.classList.contains('pad-center')){ earthManualX=0; earthManualY=0; }
+  else { earthManualX=clamp(earthManualX+dx,-.75,.75); earthManualY+=dy; }
+  playUISound(420,0.08,.025);
+}));
+const earthZoomControl=$('#earthZoom');
+earthZoomControl?.addEventListener('input',event=>{
+  earthZoom=Number(event.target.value);
+  $('#earthZoomValue').textContent=`${Math.round(earthZoom*100)}%`;
+});
 $$('.mode-switch button').forEach(button=>button.addEventListener('click',()=>{
   $$('.mode-switch button').forEach(item=>item.classList.toggle('is-active',item===button));
 }));
@@ -800,6 +1056,10 @@ const worldPosition=new THREE.Vector3();
 let selectedObject=null;
 let selectionHelper=null;
 let draggingObject=false;
+let dragStartClientX=0;
+let dragStartClientY=0;
+let dragStartLocalY=0;
+const dragStartLocalPosition=new THREE.Vector3();
 
 function updatePointer(event){
   pointer.x=event.clientX/innerWidth*2-1;
@@ -815,7 +1075,7 @@ function updateObjectInspector(){
   if(!selectedObject) return;
   objectName.textContent=selectedObject.userData.displayName;
   objectDescription.textContent=selectedObject.userData.description;
-  objectPosition.textContent=`${selectedObject.userData.kind} · X ${selectedObject.position.x.toFixed(2)} · Z ${selectedObject.position.z.toFixed(2)}`;
+  objectPosition.textContent=`${selectedObject.userData.kind} · X ${selectedObject.position.x.toFixed(2)} · Y ${selectedObject.position.y.toFixed(2)} · Z ${selectedObject.position.z.toFixed(2)}`;
 }
 function selectObject(object){
   selectedObject=object;
@@ -823,6 +1083,9 @@ function selectObject(object){
   selectionHelper=new THREE.BoxHelper(object,0x68fff0);
   selectionHelper.material.transparent=true; selectionHelper.material.opacity=.72; selectionHelper.material.depthTest=false;
   selectionHelper.renderOrder=999; scene.add(selectionHelper);
+  const characterSelected=isClassroomCharacter(object);
+  selectedCharacterLight.intensity=characterSelected?5.8:0;
+  selectedCharacterBeam.material.opacity=characterSelected ? .065 : 0;
   objectInspector.classList.add('is-open'); objectInspector.setAttribute('aria-hidden','false'); updateObjectInspector();
   anime.remove(objectInspector);
   anime({targets:objectInspector,opacity:[0,1],translateY:[22,0],scale:[.96,1],duration:480,easing:'easeOutExpo'});
@@ -831,6 +1094,7 @@ function closeObjectInspector(){
   draggingObject=false; document.body.classList.remove('is-dragging-3d');
   if(selectionHelper){ scene.remove(selectionHelper); selectionHelper=null; }
   selectedObject=null;
+  selectedCharacterLight.intensity=0; selectedCharacterBeam.material.opacity=0;
   anime.remove(objectInspector);
   anime({targets:objectInspector,opacity:0,translateY:18,scale:.97,duration:280,easing:'easeInQuad',complete:()=>{
     objectInspector.classList.remove('is-open'); objectInspector.setAttribute('aria-hidden','true');
@@ -843,9 +1107,11 @@ canvas.addEventListener('pointerdown',event=>{
   const hit=raycaster.intersectObjects(interactables,true).find(item=>interactiveRoot(item.object));
   if(!hit){ closeObjectInspector(); return; }
   const root=interactiveRoot(hit.object); selectObject(root);
+  if(isClassroomCharacter(root)){ characterReturns.delete(root); root.userData.isReturning=false; anime.remove(root.position); }
   root.getWorldPosition(worldPosition);
   dragPlane.set(new THREE.Vector3(0,1,0),-worldPosition.y);
   if(raycaster.ray.intersectPlane(dragPlane,dragPoint)) dragOffset.copy(dragPoint).sub(worldPosition);
+  dragStartClientX=event.clientX; dragStartClientY=event.clientY; dragStartLocalY=root.position.y; dragStartLocalPosition.copy(root.position);
   draggingObject=true; document.body.classList.add('is-dragging-3d'); canvas.setPointerCapture?.(event.pointerId); event.preventDefault();
 });
 canvas.addEventListener('pointermove',event=>{
@@ -857,28 +1123,42 @@ canvas.addEventListener('pointermove',event=>{
   if(!raycaster.ray.intersectPlane(dragPlane,dragPoint)) return;
   const desiredWorld=dragPoint.sub(dragOffset);
   const localPoint=selectedObject.parent.worldToLocal(desiredWorld.clone());
-  selectedObject.position.x=localPoint.x;
-  selectedObject.position.z=localPoint.z;
-  if(!students.includes(selectedObject)) selectedObject.position.y=localPoint.y;
+  if(isClassroomCharacter(selectedObject)){
+    const homeY=selectedObject.userData.initialTransform.position.y;
+    selectedObject.position.x=clamp(dragStartLocalPosition.x+(event.clientX-dragStartClientX)*.009,-7.6,7.6);
+    selectedObject.position.z=dragStartLocalPosition.z;
+    selectedObject.position.y=clamp(dragStartLocalY+(dragStartClientY-event.clientY)*.012,homeY,homeY+2.6);
+    selectedObject.rotation.z=clamp((event.clientX-dragStartClientX)*-.006,-.28,.28);
+  }else selectedObject.position.copy(localPoint);
   updateObjectInspector(); selectionHelper?.update(); event.preventDefault();
 });
 function endObjectDrag(event){
   if(!draggingObject) return;
+  const released=selectedObject;
   draggingObject=false; document.body.classList.remove('is-dragging-3d'); canvas.releasePointerCapture?.(event.pointerId);
+  if(isClassroomCharacter(released)) setTimeout(()=>{
+    if(!(draggingObject&&selectedObject===released)) returnCharacterHome(released);
+  },260);
 }
 canvas.addEventListener('pointerup',endObjectDrag);
 canvas.addEventListener('pointercancel',endObjectDrag);
 $('#closeInspector').addEventListener('click',closeObjectInspector);
 $('#rotateObject').addEventListener('click',()=>{
   if(!selectedObject) return;
-  if(selectedObject===teacher||selectedObject===solar||selectedObject===agentGroup||selectedObject===remoteRig){
+  if(isClassroomCharacter(selectedObject)||selectedObject===solar||selectedObject===agentGroup||selectedObject===remoteRig){
     anime({targets:selectedObject.userData,manualRotationY:(selectedObject.userData.manualRotationY||0)+Math.PI/2,duration:900,easing:'easeInOutCubic'});
   }else{
     anime({targets:selectedObject.rotation,y:selectedObject.rotation.y+Math.PI/2,duration:900,easing:'easeInOutCubic'});
   }
 });
+$('#liftObject').addEventListener('click',()=>{
+  if(!selectedObject) return;
+  if(isClassroomCharacter(selectedObject)) liftAndRelease(selectedObject);
+  else anime({targets:selectedObject.position,y:selectedObject.position.y+.65,direction:'alternate',duration:700,easing:'easeInOutCubic'});
+});
 $('#resetObject').addEventListener('click',()=>{
   if(!selectedObject) return;
+  if(isClassroomCharacter(selectedObject)){ returnCharacterHome(selectedObject); return; }
   const initial=selectedObject.userData.initialTransform;
   selectedObject.userData.manualRotationY=0;
   anime({targets:selectedObject.position,x:initial.position.x,y:initial.position.y,z:initial.position.z,duration:850,easing:'easeOutExpo',update:updateObjectInspector});
@@ -889,8 +1169,35 @@ $('#resetObject').addEventListener('click',()=>{
 // Render loop
 // -----------------------------------------------------------------------------
 const clock=new THREE.Clock();
+let performanceFrames=0;
+let performanceWindowStart=performance.now();
+let lastQualityAdjustment=0;
+function applyAdaptiveResolution(nextRatio){
+  adaptivePixelRatio=clamp(nextRatio,.72,maximumPixelRatio);
+  renderer.setPixelRatio(adaptivePixelRatio); renderer.setSize(innerWidth,innerHeight,false);
+  composer.setPixelRatio(adaptivePixelRatio); composer.setSize(innerWidth,innerHeight);
+}
+function tuneAdaptiveQuality(now){
+  performanceFrames++;
+  const elapsed=now-performanceWindowStart;
+  if(elapsed<2400) return;
+  const fps=performanceFrames*1000/elapsed;
+  performanceFrames=0; performanceWindowStart=now;
+  if(now-lastQualityAdjustment<3200) return;
+  if(fps<41){
+    if(adaptivePixelRatio>.78) applyAdaptiveResolution(adaptivePixelRatio-.16);
+    else { bloom.enabled=false; renderer.shadowMap.enabled=false; }
+    lastQualityAdjustment=now;
+  }else if(fps>56&&adaptivePixelRatio<maximumPixelRatio-.04){
+    applyAdaptiveResolution(adaptivePixelRatio+.1);
+    if(qualityTier!=='low') bloom.enabled=true;
+    if(qualityTier==='high') renderer.shadowMap.enabled=true;
+    lastQualityAdjustment=now;
+  }
+}
 function render(){
   const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
+  characterMixers.forEach(mixer=>mixer.update(dt));
   const damping = reducedMotion ? 1 : .075;
   smoothScrollY += (targetScrollY - smoothScrollY) * damping;
   applyScrollWorld(smoothScrollY);
@@ -898,12 +1205,56 @@ function render(){
   starField.position.y=Math.sin(t*.08)*.14;
   students.forEach((student,i)=>{
     const p=student.userData.phase;
-    student.position.y=student.userData.baseY+Math.sin(t*(.6+(i%3)*.07)+p)*.018;
-    student.rotation.z=Math.sin(t*.42+p)*.006;
+    if(!characterReturns.has(student)&&!(draggingObject&&selectedObject===student)){
+      const home=student.userData.initialTransform.position;
+      student.position.y=home.y+Math.sin(t*(.6+(i%3)*.07)+p)*.012;
+      student.rotation.y=student.userData.initialTransform.rotation.y+(student.userData.manualRotationY||0)+Math.sin(t*.22+p)*.018;
+      student.rotation.z=Math.sin(t*.42+p)*.005;
+      const bones=student.userData.bones;
+      if(bones) Object.values(bones).forEach(bone=>{ if(bone.userData.restRotation) bone.rotation.copy(bone.userData.restRotation); });
+      if(bones?.head) bones.head.rotation.y+=Math.sin(t*.5+p)*.075;
+      if(bones?.spine) bones.spine.rotation.z+=Math.sin(t*.38+p)*.018;
+      // Một vài học sinh chủ động giơ tay theo nhịp bài giảng.
+      if(bones?.rightArm&&(i===2||i===7||i===10)){
+        const raise=smooth(clamp((Math.sin(t*.42+p)-.18)*1.7));
+        bones.rightArm.rotation.z-=raise*1.08;
+        bones.rightArm.rotation.x+=raise*.34;
+      }
+    }
   });
-  teacher.rotation.y=(teacher.userData.manualRotationY||0)+Math.sin(t*.32)*.035;
+  if(!characterReturns.has(teacher)&&!(draggingObject&&selectedObject===teacher)){
+    const teacherHome=teacher.userData.initialTransform.position;
+    const presenting=clamp(fx.solar+fx.agent*.4);
+    teacher.position.x=teacherHome.x+Math.sin(t*.34)*.54*presenting;
+    teacher.position.z=teacherHome.z+Math.sin(t*.23+1.2)*.16*presenting;
+    teacher.position.y=teacherHome.y+Math.abs(Math.sin(t*1.65))*.012*presenting;
+    teacher.rotation.y=(teacher.userData.manualRotationY||0)+Math.sin(t*.32)*.12*presenting;
+    teacher.rotation.z=Math.sin(t*.7)*.006*presenting;
+    const bones=teacher.userData.bones;
+    if(bones?.head) bones.head.rotation.y+=Math.sin(t*.48)*.14;
+    if(bones?.rightArm) bones.rightArm.rotation.z-=presenting*(.24+Math.sin(t*.7)*.16);
+    if(bones?.spine) bones.spine.rotation.y+=Math.sin(t*.31)*.055*presenting;
+  }
   if(teacher.userData.arm) teacher.userData.arm.rotation.z=-.82+Math.sin(t*.9)*.2;
   if(teacher.userData.leftArm) teacher.userData.leftArm.rotation.z=.62+Math.sin(t*.72+1.4)*.16;
+  updateCharacterReturns(dt,t);
+  if(selectedObject&&isClassroomCharacter(selectedObject)){
+    selectedObject.getWorldPosition(worldPosition);
+    selectedCharacterLight.position.set(worldPosition.x,worldPosition.y+2.25,worldPosition.z+1.1);
+    selectedCharacterLight.intensity=draggingObject?7.2:4.8;
+    selectedCharacterBeam.position.set(worldPosition.x,worldPosition.y+1.52,worldPosition.z);
+    selectedCharacterBeam.material.opacity=draggingObject ? .11 : .052;
+    selectedCharacterBeam.scale.y=1+Math.sin(t*3)*.035;
+  }
+
+  const beamStart=new THREE.Vector3(.54,2.02,.12); teacher.localToWorld(beamStart);
+  const beamEnd=new THREE.Vector3(); solar.getWorldPosition(beamEnd); beamEnd.x-=.22; beamEnd.y+=.28;
+  const beamPositions=presentationBeamGeometry.attributes.position;
+  beamPositions.setXYZ(0,beamStart.x,beamStart.y,beamStart.z); beamPositions.setXYZ(1,beamEnd.x,beamEnd.y,beamEnd.z); beamPositions.needsUpdate=true;
+  presentationTarget.position.copy(beamEnd); presentationTarget.lookAt(camera.position);
+  presentationTarget.scale.setScalar(.85+Math.sin(t*3.2)*.18);
+  teacherStage.position.x=teacher.position.x; teacherStage.position.z=teacher.position.z;
+  teacherStage.scale.setScalar(.92+Math.sin(t*2.1)*.07);
   agentGroup.rotation.y=t*.45+(agentGroup.userData.manualRotationY||0);
   agentGroup.children.forEach((o,i)=>{ if(o.geometry?.type==='TorusGeometry') o.rotation.z=t*(.2+i*.05); });
   planets.forEach(p=>{ const a=t*p.userData.speed*modelSpinSpeed+p.userData.phase,r=p.userData.radius*(1+modelExplode*.38); p.position.set(Math.cos(a)*r,Math.sin(a*.72)*r*.38,Math.sin(a)*r); p.rotation.set(a*.4,a,a*.25); });
@@ -917,7 +1268,12 @@ function render(){
     }
     visual.position.copy(body.position);
   });
-  remoteRig.children.forEach((o,i)=>{ if(o.geometry?.type==='TorusGeometry') o.rotation.z=t*(.13+i*.04); });
+  earthSpin.rotation.x=earthManualX;
+  earthSpin.rotation.y=t*.105+earthManualY;
+  cloudLayer.rotation.y=t*.132+earthManualY*.84;
+  moonOrbit.rotation.y=-t*.17;
+  moon.rotation.y=t*.06;
+  orbitLine.rotation.z=Math.sin(t*.18)*.035;
   core.rotation.y=t*.16; coreShell.rotation.x=t*.1; coreShell.rotation.z=-t*.08;
   coreNodes.forEach((n,i)=>{ const s=1+Math.sin(t*2+i)*.22; n.scale.setScalar(s); });
   if(fx.scan>0){
@@ -929,15 +1285,15 @@ function render(){
   selectionHelper?.update();
   camera.lookAt(cameraTarget);
   composer.render();
+  tuneAdaptiveQuality(performance.now());
   requestAnimationFrame(render);
 }
 render();
 
 function onResize(){
   resizeIntroCanvas();
-  camera.aspect=innerWidth/innerHeight; camera.updateProjectionMatrix();
-  renderer.setPixelRatio(Math.min(devicePixelRatio,1.6)); renderer.setSize(innerWidth,innerHeight);
-  composer.setSize(innerWidth,innerHeight);
+  camera.aspect=innerWidth/innerHeight; camera.fov=mobileLayout()?52:42; camera.updateProjectionMatrix();
+  adaptivePixelRatio=Math.min(devicePixelRatio||1,maximumPixelRatio); applyAdaptiveResolution(adaptivePixelRatio);
   computeAnchors();
 }
 

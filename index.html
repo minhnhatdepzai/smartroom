@@ -147,8 +147,8 @@
     <section class="scene scene--simulation" id="simulation" data-index="04" data-name="HỌC TẬP 3D">
       <div class="center-copy simulation-copy reveal">
         <p class="eyebrow">03 / PHÒNG DẠY HỌC 3D</p>
-        <h2>Giáo viên giảng.<br><em>Mô hình chuyển động.</em></h2>
-        <p>Mở học liệu, gọi mô hình 3D và điều khiển toàn bộ bài giảng chỉ bằng giọng nói.</p>
+        <h2>Giáo viên di chuyển.<br><em>Mô hình sống động.</em></h2>
+        <p>Cô giáo đi lại, chỉ vào từng cấu trúc và điều khiển học liệu. Học sinh quan sát, cử động, giơ tay; bạn có thể nhấc hoặc kéo từng người rồi xem họ tự trở về chỗ.</p>
       </div>
 
       <div class="lesson-dock glass-card reveal" aria-label="Học liệu bài giảng">
@@ -180,7 +180,7 @@
         <div>
           <span>TRỢ LÝ GIỌNG NÓI</span>
           <p id="voiceStatus">“EduVision, mở mô hình tế bào và bắt đầu bài giảng.”</p>
-          <small>Thử nói: “chọn học sinh 3”, “sang trái”, “mở tệp”, “xoay mô hình”...</small>
+          <small>Thử nói: “nhấc học sinh 3”, “thả về chỗ”, “xoay mô hình”, “phóng to Trái Đất”...</small>
         </div>
         <div class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       </div>
@@ -197,20 +197,20 @@
       </div>
     </section>
 
-    <section class="scene scene--control" id="control" data-index="05" data-name="ĐIỀU KHIỂN TỪ XA">
+    <section class="scene scene--control" id="control" data-index="05" data-name="TRÁI ĐẤT 3D">
       <div class="copy-panel copy-panel--left reveal">
-        <p class="eyebrow">04 / LỚP HỌC TỪ XA</p>
-        <h2>Điều khiển lớp học.<br><em>Từ mọi nơi.</em></h2>
-        <p>Xoay ngang, xoay dọc, phóng to và chuyển camera trong một bảng điều khiển thống nhất — trực tiếp hoặc qua Trợ lý AI.</p>
+        <p class="eyebrow">04 / ĐỊA CẦU TƯƠNG TÁC</p>
+        <h2>Chạm vào Trái Đất.<br><em>Khám phá từng chuyển động.</em></h2>
+        <p>Quan sát bề mặt, mây, khí quyển, ánh đèn ban đêm và quỹ đạo Mặt Trăng trong một mô hình nhiều lớp. Xoay, kéo hoặc phóng to để học từ mọi góc nhìn.</p>
       </div>
       <div class="control-pad glass-card reveal">
-        <div class="control-title"><span>PTZ / CAMERA 02</span><b>TỪ XA</b></div>
+        <div class="control-title"><span>TRÁI ĐẤT / MÔ HÌNH 3D</span><b>ĐANG QUAY</b></div>
         <div class="pad-grid">
-          <button>↖</button><button>↑</button><button>↗</button>
-          <button>←</button><button class="pad-center">●</button><button>→</button>
-          <button>↙</button><button>↓</button><button>↘</button>
+          <button type="button" data-earth-x="-.16" data-earth-y="-.2" aria-label="Xoay lên trái">↖</button><button type="button" data-earth-x="-.16" aria-label="Xoay lên">↑</button><button type="button" data-earth-x="-.16" data-earth-y=".2" aria-label="Xoay lên phải">↗</button>
+          <button type="button" data-earth-y="-.2" aria-label="Xoay trái">←</button><button type="button" class="pad-center" aria-label="Đặt lại góc nhìn">●</button><button type="button" data-earth-y=".2" aria-label="Xoay phải">→</button>
+          <button type="button" data-earth-x=".16" data-earth-y="-.2" aria-label="Xoay xuống trái">↙</button><button type="button" data-earth-x=".16" aria-label="Xoay xuống">↓</button><button type="button" data-earth-x=".16" data-earth-y=".2" aria-label="Xoay xuống phải">↘</button>
         </div>
-        <div class="zoom"><span>PHÓNG TO</span><i></i><strong>72%</strong></div>
+        <label class="zoom" for="earthZoom"><span>PHÓNG TO</span><input id="earthZoom" type="range" min="0.72" max="1.35" step="0.01" value="1" /><strong id="earthZoomValue">100%</strong></label>
       </div>
     </section>
 
@@ -277,9 +277,10 @@
     <div class="object-position"><i></i><small id="objectPosition">X 0.00 · Z 0.00</small></div>
     <div class="object-actions">
       <button id="rotateObject" type="button">↻ Xoay</button>
+      <button id="liftObject" type="button">↥ Nhấc & thả</button>
       <button id="resetObject" type="button">↶ Đặt lại</button>
     </div>
-    <small class="object-hint">Giữ chuột và kéo để di chuyển từng nhân vật hoặc vật thể.</small>
+    <small class="object-hint">Giữ rồi kéo lên để nhấc nhân vật. Khi thả, họ sẽ tự tìm đường về vị trí ban đầu.</small>
   </aside>
 
   <div class="experience-controls" aria-label="Điều khiển trải nghiệm">
