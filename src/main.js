@@ -2,8 +2,6 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { clone as cloneSkeleton } from 'three/addons/utils/SkeletonUtils.js';
 import anime from 'animejs';
 import * as CANNON from 'cannon-es';
 
@@ -226,6 +224,7 @@ const strongGPU=/rtx|radeon rx|apple m[1-9]|arc\(tm\)|geforce gtx 1[6-9]/.test(g
 const weakGPU=/swiftshader|llvmpipe|mali-[tg][0-5]|adreno \(tm\) [3-5]|intel\(r\) hd graphics/.test(gpuName);
 const qualityTier=preliminaryLowEnd||weakGPU?'low':strongGPU||(!mobileLayout()&&deviceMemory>=8&&logicalCores>=8&&renderer.capabilities.maxTextureSize>=8192)?'high':'medium';
 const maximumPixelRatio=qualityTier==='high'?2:qualityTier==='medium'?1.45:1;
+const maxAnisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),qualityTier==='high'?16:qualityTier==='medium'?8:2);
 let adaptivePixelRatio=Math.min(devicePixelRatio||1,maximumPixelRatio);
 renderer.setPixelRatio(adaptivePixelRatio);
 renderer.setSize(innerWidth,innerHeight);
@@ -360,134 +359,338 @@ const desks=[]; const students=[]; const seats=[]; const halos=[];
 const deskTopMat=standard(0x8a6043,{roughness:.48,metalness:.05});
 const legMat=standard(0x182127,{roughness:.38,metalness:.65});
 const bookMat=standard(0x306f89,{roughness:.7});
-const clothing=[0x2d6c87,0x754b75,0x354b73,0x7c5b41,0x3f7170,0x553e61];
-const skin=[0x8d5f48,0xb77c5f,0x694738,0xd0a182];
+// -----------------------------------------------------------------------------
+// Nhân vật lớp học Việt Nam — dựng hoàn toàn bằng code, không dùng model tải sẵn.
+// Cô giáo mặc áo dài (thân áo ôm, hai tà trước/sau, quần lụa ống rộng, cổ đứng).
+// Học sinh mặc đồng phục áo trắng, đeo khăn quàng đỏ và ngồi hướng về phía cô.
+// -----------------------------------------------------------------------------
+const skinMats=[0xedc09c,0xe2ac85,0xf3cba8,0xd59d76].map(c=>standard(c,{roughness:.83,metalness:0}));
+const hairMats=[0x120f0e,0x1c1512,0x241a15].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.84,metalness:.05,side:THREE.DoubleSide}));
+const eyeMat=standard(0x130f0c,{roughness:.28,metalness:.06});
+const browMat=standard(0x1a1310,{roughness:.9,metalness:0});
+const mouthMat=standard(0xa15f58,{roughness:.7,metalness:0});
+const shirtMat=new THREE.MeshStandardMaterial({color:0xeff4f7,roughness:.8,metalness:0,side:THREE.DoubleSide});
+const trouserMat=standard(0x222b45,{roughness:.83,metalness:0});
+const skirtMat=new THREE.MeshStandardMaterial({color:0x1c2540,roughness:.85,metalness:0,side:THREE.DoubleSide});
+const sockMat=standard(0xf2f6f7,{roughness:.88,metalness:0});
+const shoeMat=standard(0x15191f,{roughness:.5,metalness:.14});
+// Khăn quàng đỏ dùng DoubleSide vì đây là vải mỏng, nhìn thấy cả mặt trong.
+const scarfMat=new THREE.MeshStandardMaterial({color:0xcf1d26,roughness:.6,metalness:.02,side:THREE.DoubleSide});
+// Lụa áo dài: sheen của MeshPhysicalMaterial cho viền sáng mềm đúng chất lụa.
+const aoDaiMat=new THREE.MeshPhysicalMaterial({color:0xd8688c,roughness:.42,metalness:0,sheen:.9,sheenColor:new THREE.Color(0xffd8e6),sheenRoughness:.55,clearcoat:.14,clearcoatRoughness:.6,side:THREE.DoubleSide});
+const aoDaiTrouserMat=new THREE.MeshPhysicalMaterial({color:0xf3ece2,roughness:.5,metalness:0,sheen:.7,sheenColor:new THREE.Color(0xfffaf2),sheenRoughness:.6});
+const aoDaiTrimMat=standard(0xd8b271,{roughness:.34,metalness:.55});
+
+const limbAxis=new THREE.Vector3(0,1,0);
+// Chi thể được đặt bằng hai đầu mút thay vì góc quay, nên tư thế ngồi/giơ tay
+// luôn khớp với mặt bàn và ghế đã dựng sẵn.
+function limb(from,to,radius,material,capScale=1){
+  const start=new THREE.Vector3().fromArray(from);
+  const direction=new THREE.Vector3().fromArray(to).sub(start);
+  const length=direction.length();
+  const shaft=Math.max(.02,length-radius*2*capScale);
+  const m=new THREE.Mesh(new THREE.CapsuleGeometry(radius,shaft,4,12),material);
+  m.position.copy(start).addScaledVector(direction,.5);
+  m.quaternion.setFromUnitVectors(limbAxis,direction.normalize());
+  m.castShadow=true; m.receiveShadow=true; return m;
+}
+// Ống côn đặt theo hai đầu mút — dùng cho tay áo cộc, vốn có mép cắt thẳng chứ
+// không bo tròn như capsule.
+function tube(from,to,topRadius,bottomRadius,material){
+  const start=new THREE.Vector3().fromArray(from);
+  const direction=new THREE.Vector3().fromArray(to).sub(start);
+  const m=new THREE.Mesh(new THREE.CylinderGeometry(topRadius,bottomRadius,direction.length(),16,1,true),material);
+  m.position.copy(start).addScaledVector(direction,.5);
+  m.quaternion.setFromUnitVectors(limbAxis,direction.normalize());
+  m.castShadow=true; m.receiveShadow=true; return m;
+}
+// Thân áo và tà áo là mặt cong liên tục (lathe), không phải hộp ghép — đây là
+// điều kiện để bóng đổ và đường viền áo dài đọc đúng ở mọi góc camera.
+function latheMesh(profile,material,{segments=26,phiStart=0,phiLength=Math.PI*2,depth=1,position=[0,0,0],rotation=[0,0,0]}={}){
+  const geometry=new THREE.LatheGeometry(profile.map(([x,y])=>new THREE.Vector2(x,y)),segments,phiStart,phiLength);
+  if(depth!==1) geometry.scale(1,1,depth);
+  geometry.computeVertexNormals();
+  return mesh(geometry,material,position,rotation);
+}
+// Chỏm cầu cho tóc: cắt ngang đúng chân tóc nên không che mắt.
+function dome(radius,thetaLength,material,{position=[0,0,0],rotation=[0,0,0],scale=[1,1,1]}={}){
+  const m=mesh(new THREE.SphereGeometry(radius,24,16,0,Math.PI*2,0,thetaLength),material,position,rotation);
+  m.scale.set(...scale); return m;
+}
+// Dải vải thon dần — dùng cho hai đuôi khăn quàng buông trước ngực.
+function ribbonGeometry(width,length,taper){
+  const shape=new THREE.Shape();
+  shape.moveTo(-width/2,0); shape.lineTo(width/2,0);
+  shape.lineTo(width*taper/2,-length); shape.lineTo(-width*taper/2,-length); shape.closePath();
+  const geometry=new THREE.ExtrudeGeometry(shape,{depth:.012,bevelEnabled:false,curveSegments:1});
+  geometry.translate(0,0,-.006); return geometry;
+}
+// Tam giác khăn quàng sau lưng, uốn theo mặt lưng thay vì là một tấm phẳng.
+// Bán kính thân người thay đổi phi tuyến theo chiều cao, nên khăn quàng phải bám
+// đúng đường sinh của thân áo; nếu nội suy tuyến tính thì tấm vải sẽ lúc lồi ra
+// lúc chìm vào trong áo và gây z-fighting.
+function profileRadius(profile,y){
+  if(y<=profile[0][1]) return profile[0][0];
+  for(let i=0;i<profile.length-1;i++){
+    const [r0,y0]=profile[i],[r1,y1]=profile[i+1];
+    if(y<=y1) return r0+(r1-r0)*((y-y0)/(y1-y0||1));
+  }
+  return profile[profile.length-1][0];
+}
+function curvedTriangleGeometry(radiusAt,halfAngle,length,rows=6,cols=8,depth=1){
+  const positions=[],indices=[];
+  for(let i=0;i<=rows;i++){
+    const v=i/rows,span=halfAngle*(1-v*.92),r=radiusAt(v);
+    for(let j=0;j<=cols;j++){
+      const a=-span+span*2*(j/cols);
+      positions.push(Math.sin(a)*r,-length*v,Math.cos(a)*r*depth);
+    }
+  }
+  for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){
+    const p=i*(cols+1)+j;
+    indices.push(p,p+cols+1,p+1,p+1,p+cols+1,p+cols+2);
+  }
+  const geometry=new THREE.BufferGeometry();
+  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
+  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
+}
+function markRest(...objects){ objects.forEach(o=>{ o.userData.restRotation=o.rotation.clone(); }); }
+// Cánh tay phải là một chuỗi liền mạch vai → khuỷu → cổ tay → bàn tay. Nếu chỉ
+// xếp cạnh nhau hai capsule rời thì ở cận cảnh sẽ thấy rõ khe hở giữa các khớp.
+function addArmChain(arm,{shoulder,elbow,wrist,sleeveMat,skinMat,upperRadius,lowerRadius,handLength,jointRadius,cuff=true,handRadius}){
+  const elbowVector=new THREE.Vector3().fromArray(elbow);
+  const wristVector=new THREE.Vector3().fromArray(wrist);
+  arm.add(limb(shoulder,elbow,upperRadius,sleeveMat));
+  arm.add(mesh(new THREE.SphereGeometry(jointRadius,14,12),sleeveMat,elbow));
+  arm.add(limb(elbow,wrist,lowerRadius,sleeveMat));
+  if(cuff) arm.add(mesh(new THREE.SphereGeometry(lowerRadius*1.02,12,10),sleeveMat,wrist));
+  const forward=wristVector.clone().sub(elbowVector).normalize();
+  const handEnd=wristVector.clone().addScaledVector(forward,handLength);
+  arm.add(limb(wrist,handEnd.toArray(),handRadius??lowerRadius*1.04,skinMat));
+}
+
+// Khăn quàng đỏ: vành cổ + phần phủ vai + nút thắt + hai đuôi trước ngực +
+// tam giác sau lưng. Từ camera hero ta nhìn lớp từ phía sau nên tam giác lưng
+// là chi tiết đọc rõ nhất.
+function addRedScarf(torso,y,frontSign,bodyProfile){
+  const scarf=new THREE.Group();
+  // Vành khăn gập quanh cổ áo, bán kính bám sát thân áo (depth .70 giống thân).
+  scarf.add(latheMesh([[.137,0],[.124,.05],[.114,.092]],scarfMat,{segments:20,depth:.74}));
+  // Phần vải phủ lên hai vai.
+  scarf.add(latheMesh([[.207,-.088],[.186,-.046],[.152,-.004]],scarfMat,{segments:22,depth:.70}));
+  const knot=mesh(new THREE.SphereGeometry(.033,12,10),scarfMat,[0,-.022,frontSign*.106]);
+  knot.scale.set(1.3,.92,.85); scarf.add(knot);
+  // Hai đuôi khăn buông trước ngực, nghiêng ra ngoài để ôm theo độ cong lồng ngực.
+  [-1,1].forEach(side=>{
+    scarf.add(mesh(ribbonGeometry(.072,.27,.40),scarfMat,[side*.04,-.034,frontSign*.108],[-frontSign*.21,0,side*.14]));
+  });
+  // Tam giác sau lưng — mở rộng dần theo lưng nên không chìm vào trong áo.
+  const backTop=y-.055,backLength=.40;
+  scarf.add(mesh(curvedTriangleGeometry(v=>profileRadius(bodyProfile,backTop-backLength*v)+.014,.68,backLength,9,10,.70),scarfMat,[0,-.055,0],[0,frontSign>0?Math.PI:0,0]));
+  scarf.position.y=y; torso.add(scarf);
+  return scarf;
+}
+
+// Khuôn mặt: mắt, chân mày, mũi, miệng và tai. frontSign cho biết nhân vật
+// quay mặt về +Z hay -Z.
+function addFace(head,scale,skinMat,frontSign){
+  const f=frontSign,s=scale;
+  [-1,1].forEach(side=>{
+    const eye=mesh(new THREE.SphereGeometry(.019*s,12,10),eyeMat,[side*.056*s,.155*s,f*.126*s]);
+    eye.scale.set(1.35,.92,.7); head.add(eye);
+    head.add(mesh(new THREE.BoxGeometry(.052*s,.011*s,.014*s),browMat,[side*.058*s,.198*s,f*.122*s],[0,0,side*f*.13]));
+    const ear=mesh(new THREE.SphereGeometry(.031*s,12,10),skinMat,[side*.131*s,.142*s,.004*s]);
+    ear.scale.set(.5,1.2,.85); head.add(ear);
+  });
+  const nose=mesh(new THREE.SphereGeometry(.023*s,12,10),skinMat,[0,.128*s,f*.135*s]);
+  nose.scale.set(1,.9,1.1); head.add(nose);
+  head.add(mesh(new THREE.BoxGeometry(.046*s,.013*s,.012*s),mouthMat,[0,.073*s,f*.13*s]));
+}
+
+// ---------------------------------------------------------------------------
+// Học sinh: tư thế ngồi thật (đùi nằm ngang dưới mặt bàn, cẳng chân thẳng
+// xuống sàn, cẳng tay đặt lên bàn), thân và đầu xoay về phía cô giáo.
+// ---------------------------------------------------------------------------
+const teacherAnchor=new THREE.Vector3(-2.75,0,-4.15);
+// Đường sinh thân áo học sinh: [bán kính, độ cao] tính từ gốc pivot thân trên.
+const studentTorsoProfile=[[.172,-.05],[.198,.06],[.216,.21],[.222,.38],[.208,.55],[.176,.68],[.12,.765],[.066,.81]];
+function buildStudent(index,aim){
+  const group=new THREE.Group();
+  const skinMat=skinMats[index%skinMats.length];
+  const hairMat=hairMats[index%hairMats.length];
+  const girl=index%2===1;
+  const legMaterial=girl?skinMat:trouserMat;
+
+  // Hông và chân — ngồi trên mặt ghế (mặt ghế cao .63), đùi đưa về phía bảng (-Z)
+  // và luồn dưới mặt bàn (mặt bàn cao 1.06).
+  const pelvis=mesh(new THREE.SphereGeometry(.172,18,14),girl?skirtMat:trouserMat,[0,.70,.30]);
+  pelvis.scale.set(1,.78,1.02); group.add(pelvis);
+  [-1,1].forEach(side=>{
+    group.add(limb([side*.115,.695,.24],[side*.135,.645,-.22],.092,girl?skirtMat:trouserMat));
+    group.add(limb([side*.135,.63,-.22],[side*.142,.105,-.30],.072,legMaterial));
+    if(girl) group.add(limb([side*.142,.27,-.275],[side*.144,.105,-.30],.068,sockMat));
+    group.add(mesh(new THREE.BoxGeometry(.13,.075,.26),shoeMat,[side*.145,.05,-.35]));
+  });
+  if(girl) group.add(latheMesh([[.27,-.16],[.235,-.04],[.19,.06]],skirtMat,{segments:20,depth:.92,position:[0,.71,.20],rotation:[-.34,0,0]}));
+
+  // Thân trên là một pivot riêng để code hoạt hình xoay người theo nhịp bài học.
+  const torso=new THREE.Group(); torso.position.set(0,.70,.285); group.add(torso);
+  torso.add(latheMesh(studentTorsoProfile,shirtMat,{segments:24,depth:.70}));
+  torso.add(mesh(new THREE.CylinderGeometry(.062,.07,.15,14),skinMat,[0,.845,-.008]));
+  [-1,1].forEach(side=>{
+    const shoulder=mesh(new THREE.SphereGeometry(.076,14,12),shirtMat,[side*.182,.70,0]);
+    shoulder.scale.set(1,.86,.82); torso.add(shoulder);
+  });
+  addRedScarf(torso,.755,-1,studentTorsoProfile);
+
+  // Đầu
+  const head=new THREE.Group(); head.position.set(0,.945,-.016); torso.add(head);
+  const skull=mesh(new THREE.SphereGeometry(.175,26,20),skinMat,[0,.165,0]);
+  skull.scale.set(.9,1.06,.94); head.add(skull);
+  addFace(head,1.18,skinMat,-1);
+  // Chỏm tóc cắt ngay trên chân mày; khối tóc sau nghiêng về +Z để phủ kín gáy —
+  // camera hero nhìn lớp từ phía sau nên đây là phần tóc thấy rõ nhất.
+  head.add(dome(.186,1.06,hairMat,{position:[0,.166,.008],scale:[1,.98,1.02]}));
+  const hairStyle=index%4;
+  if(hairStyle===0) head.add(dome(.19,1.44,hairMat,{position:[0,.15,.024],rotation:[.55,0,0]}));
+  else if(hairStyle===1){
+    head.add(dome(.196,1.62,hairMat,{position:[0,.146,.026],rotation:[.46,0,0],scale:[1,1,.96]}));
+  }else if(hairStyle===2){
+    head.add(dome(.19,1.5,hairMat,{position:[0,.148,.024],rotation:[.5,0,0]}));
+    head.add(limb([0,.11,.145],[0,-.045,.285],.054,hairMat));
+  }else{
+    head.add(dome(.192,1.52,hairMat,{position:[0,.148,.024],rotation:[.48,0,0]}));
+    [-1,1].forEach(side=>head.add(limb([side*.135,.085,.10],[side*.178,-.065,.165],.048,hairMat)));
+  }
+
+  // Cánh tay: pivot ở vai, cẳng tay và bàn tay đặt lên mặt bàn (cao 1.06).
+  const arms=[-1,1].map(side=>{
+    const arm=new THREE.Group(); arm.position.set(side*.205,.685,0); torso.add(arm);
+    // Tay áo cộc của đồng phục có mép cắt thẳng, phần còn lại là da tay.
+    arm.add(tube([0,.03,0],[side*.028,-.14,-.02],.072,.062,shirtMat));
+    addArmChain(arm,{
+      shoulder:[side*.026,-.115,-.018],elbow:[side*.038,-.235,-.06],wrist:[side*.022,-.275,-.40],
+      sleeveMat:skinMat,skinMat,upperRadius:.052,lowerRadius:.045,handLength:.085,jointRadius:.049,cuff:false,handRadius:.052
+    });
+    return arm;
+  });
+
+  // Xoay về phía cô: thân ghế xoay ít, thân trên và đầu xoay thêm cho đủ hướng.
+  group.rotation.y=aim*.34;
+  torso.rotation.y=aim*.30;
+  head.rotation.y=aim*.36;
+  markRest(torso,head,arms[0],arms[1]);
+  return {group,bones:{spine:torso,head,leftArm:arms[0],rightArm:arms[1]}};
+}
+
 for(let row=0;row<3;row++){
   for(let col=0;col<4;col++){
     const x=(col-1.5)*3.45+(row%2?.35:0); const z=3.4-row*3.1;
     const dg=new THREE.Group();
     dg.add(mesh(new THREE.BoxGeometry(2.45,.16,1.18),deskTopMat,[0,.98,0]));
-    dg.add(mesh(new THREE.BoxGeometry(2.12,.13,.18),standard(0x704a34,{roughness:.54}),[0,.73,.42]));
+    dg.add(mesh(new THREE.BoxGeometry(2.12,.12,.16),standard(0x704a34,{roughness:.54}),[0,.88,.44]));
     [-.96,.96].forEach(lx=>[-.43,.43].forEach(lz=>dg.add(mesh(new THREE.BoxGeometry(.09,.96,.09),legMat,[lx,.48,lz]))));
     if((row+col)%2===0) dg.add(mesh(new THREE.BoxGeometry(.44,.055,.32),bookMat,[-.47,1.1,-.12],[0,(col%3-.5)*.35,0]));
     dg.position.set(x,0,z); classroom.add(dg); desks.push(dg);
 
-    const sg=new THREE.Group();
-    const primitiveAvatar=new THREE.Group();
-    const studentMat=standard(clothing[(row*4+col)%clothing.length],{roughness:.76});
-    const headMat=standard(skin[(row+col)%skin.length],{roughness:.84,metalness:0});
-    const studentTorso=mesh(new THREE.CapsuleGeometry(.29,.58,7,14),studentMat,[0,1.52,.08]); studentTorso.scale.z=.72; primitiveAvatar.add(studentTorso);
-    primitiveAvatar.add(mesh(new THREE.CylinderGeometry(.095,.11,.16,14),headMat,[0,1.98,.02]));
-    const studentHead=mesh(new THREE.SphereGeometry(.285,28,24),headMat,[0,2.2,-.02]); studentHead.scale.set(.88,1.08,.91); primitiveAvatar.add(studentHead);
-    const hair=mesh(new THREE.SphereGeometry(.294,28,18),standard((row+col)%3===0?0x30221e:0x17171a,{roughness:.95}),[0,2.3,.015]); hair.scale.set(.92,.72,.94); primitiveAvatar.add(hair);
-    [-.115,.115].forEach(lx=>primitiveAvatar.add(mesh(new THREE.SphereGeometry(.021,10,10),standard(0x11161a,{roughness:.7}),[lx,2.24,-.268])));
-    primitiveAvatar.add(mesh(new THREE.SphereGeometry(.042,12,12),headMat,[0,2.16,-.285]));
-    [-.27,.27].forEach(lx=>primitiveAvatar.add(mesh(new THREE.SphereGeometry(.048,12,12),headMat,[lx,2.2,-.01])));
-    [-.32,.32].forEach((lx,index)=>{
-      const arm=mesh(new THREE.CapsuleGeometry(.075,.5,5,10),studentMat,[lx,1.57,-.13],[-.82,0,index?-.08:.08]); primitiveAvatar.add(arm);
-      primitiveAvatar.add(mesh(new THREE.SphereGeometry(.09,14,14),headMat,[lx,1.29,-.43]));
-    });
-    [-.16,.16].forEach(lx=>{
-      primitiveAvatar.add(mesh(new THREE.CapsuleGeometry(.09,.54,5,10),standard(0x222b32,{roughness:.8}),[lx,.65,.16],[.08,0,0]));
-      primitiveAvatar.add(mesh(new THREE.BoxGeometry(.18,.1,.32),standard(0x11171d,{roughness:.7}),[lx,.13,-.02]));
-    });
+    // Ghế hạ xuống cho đúng tỉ lệ với mặt bàn 1.06: mặt ngồi .63, lưng ghế chỉ
+    // cao tới 1.25 nên vai, khăn quàng và đầu học sinh không bị che.
     const chair=new THREE.Group();
-    chair.add(mesh(new THREE.BoxGeometry(.82,.09,.72),standard(0x263a43,{roughness:.52,metalness:.23}),[0,.78,.35]));
-    chair.add(mesh(new THREE.BoxGeometry(.82,.64,.09),standard(0x263a43,{roughness:.52,metalness:.23}),[0,1.14,.66]));
-    [-.31,.31].forEach(lx=>[-.22,.54].forEach(lz=>chair.add(mesh(new THREE.BoxGeometry(.06,.74,.06),legMat,[lx,.39,lz]))));
-    sg.add(primitiveAvatar);
+    chair.add(mesh(new THREE.BoxGeometry(.82,.09,.72),standard(0x263a43,{roughness:.52,metalness:.23}),[0,.585,.35]));
+    chair.add(mesh(new THREE.BoxGeometry(.82,.6,.09),standard(0x263a43,{roughness:.52,metalness:.23}),[0,.95,.66]));
+    [-.31,.31].forEach(lx=>[-.22,.54].forEach(lz=>chair.add(mesh(new THREE.BoxGeometry(.06,.6,.06),legMat,[lx,.3,lz]))));
     chair.position.set(x,0,z+.34); chair.rotation.y=(col%2?-.035:.035); classroom.add(chair); seats.push(chair);
-    sg.position.set(x,0,z+.34); sg.rotation.y=(col%2?-.035:.035); sg.userData={baseY:0,phase:row*1.7+col*.84,primitiveAvatar}; classroom.add(sg); students.push(sg);
+
+    const index=row*4+col;
+    const seatZ=z+.34;
+    // Góc quay cần thiết để nhìn thẳng vào cô giáo, giới hạn ở ~57° để học
+    // sinh không bị vặn người khỏi bàn.
+    const aim=clamp(Math.atan2(-(teacherAnchor.x-x),-(teacherAnchor.z-seatZ)),-1,1);
+    const {group:sg,bones}=buildStudent(index,aim);
+    sg.position.set(x,0,seatZ);
+    sg.rotation.y+=(col%2?-.035:.035);
+    sg.userData={baseY:0,phase:row*1.7+col*.84,bones};
+    classroom.add(sg); students.push(sg);
 
     const haloMat=new THREE.MeshBasicMaterial({color:0x55efe1,transparent:true,opacity:0,blending:THREE.AdditiveBlending,depthWrite:false});
     haloMat.userData.baseOpacity=1;
-    const halo=mesh(new THREE.TorusGeometry(.58,.014,8,64),haloMat,[x,2.18,z+.22],[Math.PI/2,0,0]); halo.scale.set(1,.58,1); classroom.add(halo); halos.push(halo);
+    const halo=mesh(new THREE.TorusGeometry(.52,.014,8,64),haloMat,[x,2.12,seatZ],[Math.PI/2,0,0]); halo.scale.set(1,.58,1); classroom.add(halo); halos.push(halo);
   }
 }
 
-// Teacher
+// ---------------------------------------------------------------------------
+// Cô giáo Việt Nam mặc áo dài — đứng cạnh bục giảng, quay mặt về phía lớp (+Z).
+// Áo dài gồm: cổ đứng, thân áo ôm, hai tà trước/sau xẻ ở hông, quần lụa ống
+// rộng. Hai tà là hai cung lathe nên khe xẻ hai bên hiện ra đúng như vải thật.
+// ---------------------------------------------------------------------------
 const teacher=new THREE.Group();
-const teacherPrimitive=new THREE.Group();
-const teacherShirt=standard(0xd5e0e4,{roughness:.72});
-const teacherSkin=standard(0xb57d61,{roughness:.83});
-const teacherPants=standard(0x263447,{roughness:.7});
-const teacherTorso=mesh(new THREE.CapsuleGeometry(.36,.86,8,16),teacherShirt,[0,1.72,0]); teacherTorso.scale.z=.72; teacherPrimitive.add(teacherTorso);
-teacherPrimitive.add(mesh(new THREE.CylinderGeometry(.105,.12,.18,16),teacherSkin,[0,2.21,0]));
-const teacherHead=mesh(new THREE.SphereGeometry(.31,32,28),teacherSkin,[0,2.47,0]); teacherHead.scale.set(.88,1.08,.92); teacherPrimitive.add(teacherHead);
-const teacherHair=mesh(new THREE.SphereGeometry(.325,30,22),standard(0x2b1d1d,{roughness:.96}),[0,2.61,-.035]); teacherHair.scale.set(.93,.76,.96); teacherPrimitive.add(teacherHair);
-teacherPrimitive.add(mesh(new THREE.SphereGeometry(.055,12,12),teacherSkin,[0,2.43,.3]));
-[-.12,.12].forEach(lx=>teacherPrimitive.add(mesh(new THREE.SphereGeometry(.026,10,10),standard(0x101418,{roughness:.8}),[lx,2.52,.275])));
-[-.3,.3].forEach(lx=>teacherPrimitive.add(mesh(new THREE.SphereGeometry(.05,12,12),teacherSkin,[lx,2.47,0])));
-[-.18,.18].forEach(lx=>{
-  teacherPrimitive.add(mesh(new THREE.CapsuleGeometry(.115,.7,6,12),teacherPants,[lx,.65,0]));
-  teacherPrimitive.add(mesh(new THREE.BoxGeometry(.24,.12,.42),standard(0x151a20,{roughness:.6}),[lx,.1,.08]));
-});
-const teacherArm=mesh(new THREE.CapsuleGeometry(.095,.65,4,8),teacherSkin,[.48,1.9,.02],[0,0,-.82]);
-const teacherArmLeft=mesh(new THREE.CapsuleGeometry(.095,.65,4,8),teacherSkin,[-.46,1.88,.02],[0,0,.62]);
-teacherPrimitive.add(teacherArm,teacherArmLeft);
-teacherPrimitive.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[.71,2.22,.02]));
-teacherPrimitive.add(mesh(new THREE.SphereGeometry(.11,16,16),teacherSkin,[-.68,2.12,.02]));
-teacher.add(teacherPrimitive);
-teacher.userData.arm=teacherArm; teacher.userData.leftArm=teacherArmLeft; teacher.userData.primitiveAvatar=teacherPrimitive;
-teacher.position.set(-2.75,0,-4.15); teacher.scale.setScalar(1.08); classroom.add(teacher);
-const podium=mesh(new THREE.BoxGeometry(1.35,1.05,.75),standard(0x513a2c,{roughness:.48,metalness:.16}),[-4.65,.52,-4.6]); classroom.add(podium);
+const teacherSkin=skinMats[1];
+const teacherHair=hairMats[0];
+const teacherBody=new THREE.Group(); teacher.add(teacherBody);
 
-// Mô hình GLB có hệ xương thay thế các hình capsule ngay khi tải xong. Các hình
-// capsule vẫn là lớp dự phòng để cảnh không bao giờ bị trống trên mạng chậm.
-const characterMixers=[];
-const gltfLoader=new GLTFLoader();
-const maxAnisotropy=Math.min(renderer.capabilities.getMaxAnisotropy(),qualityTier==='high'?16:qualityTier==='medium'?8:2);
-function prepareHumanoid(source,targetHeight,facingY=0,sourceHeight=1.8,animationSpeed=1){
-  const model=cloneSkeleton(source.scene);
-  model.traverse(object=>{
-    if(!object.isMesh) return;
-    object.castShadow=qualityTier!=='low'; object.receiveShadow=qualityTier!=='low';
-    const materials=Array.isArray(object.material)?object.material:[object.material];
-    materials.forEach(material=>{
-      if(material.map) material.map.anisotropy=maxAnisotropy;
-      if('roughness' in material) material.roughness=Math.max(.46,material.roughness??.6);
-      if(material.emissive){ material.emissive.set(0x101c22); material.emissiveIntensity=.2; }
-      material.needsUpdate=true;
-    });
+// Quần lụa ống rộng
+[-1,1].forEach(side=>{
+  teacherBody.add(mesh(new THREE.CylinderGeometry(.108,.152,1.0,18,1,true),aoDaiTrouserMat,[side*.112,.545,.005],[0,0,side*-.012]));
+  const shoe=mesh(new THREE.SphereGeometry(.075,14,10),standard(0xe6d9cb,{roughness:.42,metalness:.1}),[side*.115,.045,.03]);
+  shoe.scale.set(.72,.55,1.35); teacherBody.add(shoe);
+});
+
+// Hai tà áo dài — cung trước phủ mặt +Z, cung sau phủ mặt -Z, hở hai bên hông.
+const panelProfile=[[.268,-.94],[.258,-.72],[.242,-.5],[.226,-.3],[.212,-.14],[.203,0]];
+teacherBody.add(latheMesh(panelProfile,aoDaiMat,{segments:22,depth:.86,phiStart:-Math.PI*.44,phiLength:Math.PI*.88,position:[0,1.07,0]}));
+teacherBody.add(latheMesh(panelProfile,aoDaiMat,{segments:22,depth:.86,phiStart:Math.PI*.56,phiLength:Math.PI*.88,position:[0,1.07,0]}));
+
+// Thân áo ôm từ hông lên vai
+const torsoGroup=new THREE.Group(); torsoGroup.position.set(0,1.06,0); teacherBody.add(torsoGroup);
+torsoGroup.add(latheMesh([[.201,-.02],[.192,.09],[.166,.21],[.172,.32],[.199,.43],[.196,.53],[.168,.62],[.115,.68],[.082,.70]],aoDaiMat,{segments:26,depth:.74}));
+torsoGroup.add(mesh(new THREE.CylinderGeometry(.058,.066,.13,14),teacherSkin,[0,.735,0]));
+// Cổ áo đứng đặc trưng của áo dài, viền chỉ vàng
+torsoGroup.add(mesh(new THREE.CylinderGeometry(.078,.088,.115,18,1,true),aoDaiMat,[0,.755,0]));
+torsoGroup.add(mesh(new THREE.TorusGeometry(.079,.006,8,24),aoDaiTrimMat,[0,.812,0],[Math.PI/2,0,0]));
+// Hàng nút chạy chéo từ cổ xuống sườn phải — dấu nhận dạng của áo dài
+const placketCurve=new THREE.CatmullRomCurve3([
+  new THREE.Vector3(0,.70,.108),new THREE.Vector3(-.056,.63,.122),
+  new THREE.Vector3(-.108,.55,.096),new THREE.Vector3(-.152,.46,.026),
+  new THREE.Vector3(-.168,.36,-.02)
+]);
+torsoGroup.add(mesh(new THREE.TubeGeometry(placketCurve,26,.007,6,false),aoDaiTrimMat));
+[.16,.44,.72].forEach(u=>{
+  const p=placketCurve.getPoint(u);
+  torsoGroup.add(mesh(new THREE.SphereGeometry(.014,10,8),aoDaiTrimMat,[p.x,p.y,p.z]));
+});
+
+// Đầu và tóc dài
+const teacherHead=new THREE.Group(); teacherHead.position.set(0,.80,0); torsoGroup.add(teacherHead);
+const teacherSkull=mesh(new THREE.SphereGeometry(.152,28,22),teacherSkin,[0,.135,0]);
+teacherSkull.scale.set(.9,1.08,.95); teacherHead.add(teacherSkull);
+addFace(teacherHead,1.02,teacherSkin,1);
+teacherHead.add(dome(.161,1.02,teacherHair,{position:[0,.138,-.006],scale:[1,1,1.02]}));
+teacherHead.add(latheMesh([[.158,-.52],[.176,-.34],[.188,-.16],[.183,0],[.166,.11],[.13,.17]],teacherHair,{segments:24,phiStart:Math.PI*.4,phiLength:Math.PI*1.2,depth:.98,position:[0,.135,.01]}));
+[-1,1].forEach(side=>{
+  teacherHead.add(mesh(new THREE.SphereGeometry(.014,10,8),aoDaiTrimMat,[side*.132,.10,.012]));
+});
+
+// Cánh tay: tay trái đưa lên giới thiệu học liệu trên bảng, tay phải thả tự
+// nhiên dọc thân. Tay áo dài ôm suốt tới cổ tay nên chỉ bàn tay là màu da.
+const teacherArms={};
+[-1,1].forEach(side=>{
+  const arm=new THREE.Group(); arm.position.set(side*.176,.60,0); torsoGroup.add(arm);
+  const raised=side>0;
+  arm.add(mesh(new THREE.SphereGeometry(.058,14,12),aoDaiMat,[0,-.01,0]));
+  addArmChain(arm,{
+    shoulder:[0,-.02,0],
+    elbow:raised?[side*.20,.075,.05]:[side*.05,-.245,.028],
+    wrist:raised?[side*.375,.185,.085]:[side*.028,-.485,.072],
+    sleeveMat:aoDaiMat,skinMat:teacherSkin,
+    upperRadius:.053,lowerRadius:.044,handLength:.125,jointRadius:.05
   });
-  // Các nhân vật Mixamo có mesh skinned và xương nằm ở hai hệ đơn vị khác nhau;
-  // dùng chiều cao chuẩn của asset tránh Box3 đọc sai biên ở tư thế bind.
-  model.scale.setScalar(targetHeight/sourceHeight);
-  const holder=new THREE.Group(); holder.rotation.y=facingY; holder.add(model);
-  if(source.animations.length){
-    const mixer=new THREE.AnimationMixer(model);
-    const idle=source.animations.find(clip=>/idle/i.test(clip.name))||source.animations[0];
-    const action=mixer.clipAction(idle); action.play();
-    if(animationSpeed>0){ action.timeScale=animationSpeed; action.fadeIn(.35); characterMixers.push(mixer); }
-    else { mixer.setTime(.12); action.paused=true; mixer.update(0); }
-  }
-  return holder;
-}
-function characterBones(model){
-  const bones={};
-  model.traverse(object=>{
-    if(!object.isBone) return;
-    const name=object.name.toLowerCase();
-    if(/head$/.test(name)||/neck_joint_2$/.test(name)) bones.head=object;
-    if(/rightarm$/.test(name)||/skeleton_arm_joint_r$/.test(name)) bones.rightArm=object;
-    if(/leftarm$/.test(name)||/skeleton_arm_joint_l/.test(name)) bones.leftArm=object;
-    if(/spine2$/.test(name)||/torso_joint_3$/.test(name)) bones.spine=object;
-  });
-  Object.values(bones).forEach(bone=>{ bone.userData.restRotation=bone.rotation.clone(); });
-  return bones;
-}
-gltfLoader.loadAsync('/assets/michelle.glb').then(teacherAsset=>{
-  const studentAsset=teacherAsset;
-  const teacherModel=prepareHumanoid(teacherAsset,2.62,Math.PI,1.66,.24);
-  teacherModel.position.set(0,0,.02); teacher.add(teacherModel);
-  teacher.userData.bones=characterBones(teacherModel);
-  teacher.userData.primitiveAvatar.visible=false;
-  students.forEach((student,index)=>{
-    const human=prepareHumanoid(studentAsset,2.12+(index%3)*.035,0,1.66,0);
-    human.position.set(0,-.34,.03); human.rotation.y+=(index%2?-.045:.045);
-    student.add(human); student.userData.bones=characterBones(human); student.userData.humanoid=human; student.userData.primitiveAvatar.visible=false;
-  });
-}).catch(error=>console.warn('Không thể tải mô hình nhân vật GLB, đang dùng bản dựng dự phòng.',error));
+  if(raised) teacherArms.left=arm; else teacherArms.right=arm;
+});
+
+markRest(torsoGroup,teacherHead,teacherArms.left,teacherArms.right);
+teacher.userData.bones={spine:torsoGroup,head:teacherHead,leftArm:teacherArms.left,rightArm:teacherArms.right};
+teacher.position.set(-2.75,0,-4.15); classroom.add(teacher);
+const podium=mesh(new THREE.BoxGeometry(1.35,1.05,.75),standard(0x513a2c,{roughness:.48,metalness:.16}),[-4.65,.52,-4.6]); classroom.add(podium);
 
 // Ceiling camera
 const classroomCam=new THREE.Group();
@@ -1197,7 +1400,6 @@ function tuneAdaptiveQuality(now){
 }
 function render(){
   const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
-  characterMixers.forEach(mixer=>mixer.update(dt));
   const damping = reducedMotion ? 1 : .075;
   smoothScrollY += (targetScrollY - smoothScrollY) * damping;
   applyScrollWorld(smoothScrollY);
@@ -1214,11 +1416,12 @@ function render(){
       if(bones) Object.values(bones).forEach(bone=>{ if(bone.userData.restRotation) bone.rotation.copy(bone.userData.restRotation); });
       if(bones?.head) bones.head.rotation.y+=Math.sin(t*.5+p)*.075;
       if(bones?.spine) bones.spine.rotation.z+=Math.sin(t*.38+p)*.018;
-      // Một vài học sinh chủ động giơ tay theo nhịp bài giảng.
+      // Một vài học sinh chủ động giơ tay theo nhịp bài giảng. Học sinh quay mặt
+      // về -Z nên tay phải nằm ở +X: xoay dương quanh trục Z là giơ tay lên.
       if(bones?.rightArm&&(i===2||i===7||i===10)){
-        const raise=smooth(clamp((Math.sin(t*.42+p)-.18)*1.7));
-        bones.rightArm.rotation.z-=raise*1.08;
-        bones.rightArm.rotation.x+=raise*.34;
+        const raise=smooth(smooth(clamp((Math.sin(t*.42+p)-.18)*1.7)));
+        bones.rightArm.rotation.z+=raise*2.05;
+        bones.rightArm.rotation.x-=raise*.24;
       }
     }
   });
@@ -1231,12 +1434,16 @@ function render(){
     teacher.rotation.y=(teacher.userData.manualRotationY||0)+Math.sin(t*.32)*.12*presenting;
     teacher.rotation.z=Math.sin(t*.7)*.006*presenting;
     const bones=teacher.userData.bones;
-    if(bones?.head) bones.head.rotation.y+=Math.sin(t*.48)*.14;
-    if(bones?.rightArm) bones.rightArm.rotation.z-=presenting*(.24+Math.sin(t*.7)*.16);
-    if(bones?.spine) bones.spine.rotation.y+=Math.sin(t*.31)*.055*presenting;
+    // Trả các khớp về tư thế gốc trước khi cộng dao động, nếu không góc quay sẽ
+    // tích luỹ mỗi khung hình và cô giáo tự xoay tròn.
+    Object.values(bones).forEach(bone=>{ if(bone.userData.restRotation) bone.rotation.copy(bone.userData.restRotation); });
+    bones.head.rotation.y+=Math.sin(t*.48)*.14;
+    bones.spine.rotation.y+=Math.sin(t*.31)*.055*presenting;
+    // Tay trái giữ nhịp giới thiệu học liệu, tay phải đưa nhẹ theo lời giảng.
+    bones.leftArm.rotation.z+=Math.sin(t*.82)*.11-presenting*.2;
+    bones.leftArm.rotation.x+=Math.sin(t*.64+1.1)*.07;
+    bones.rightArm.rotation.z+=Math.sin(t*.71+1.4)*.075;
   }
-  if(teacher.userData.arm) teacher.userData.arm.rotation.z=-.82+Math.sin(t*.9)*.2;
-  if(teacher.userData.leftArm) teacher.userData.leftArm.rotation.z=.62+Math.sin(t*.72+1.4)*.16;
   updateCharacterReturns(dt,t);
   if(selectedObject&&isClassroomCharacter(selectedObject)){
     selectedObject.getWorldPosition(worldPosition);

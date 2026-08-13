@@ -16,7 +16,7 @@ sau đó mở:
 http://localhost:5500
 ```
 
-> Cần Internet khi mở trang lần đầu vì Three.js được tải từ jsDelivr CDN. Nhân vật sử dụng model GLB trong `assets/`; phòng học, camera, digital twin, AI core và các hiệu ứng còn lại được dựng bằng Three.js.
+> Cần Internet khi mở trang lần đầu vì Three.js được tải từ jsDelivr CDN. Toàn bộ nhân vật (cô giáo áo dài, học sinh đeo khăn quàng đỏ), phòng học, camera, digital twin, AI core và các hiệu ứng đều được dựng bằng code Three.js — không tải model ngoài.
 
 ## Build và triển khai Cloudflare
 
@@ -62,6 +62,19 @@ Thư mục xuất bản là `dist/`. Các đường dẫn không khớp tài ngu
 - `src/style.css` — cinematic visual system + responsive.
 - `src/main.js` — intro animation, Three.js world, native scroll interpolation.
 - `public/assets/logo-icon.png` — logo EduVision.
+
+## Chỉnh nhân vật
+
+Trong `src/main.js`, phần "Nhân vật lớp học Việt Nam":
+
+- `buildStudent()` — học sinh ngồi: áo trắng, khăn quàng đỏ, quần/váy đồng phục,
+  bốn kiểu tóc luân phiên theo `index%4`.
+- `addRedScarf()` — khăn quàng đỏ (vành cổ, phần phủ vai, nút thắt, hai đuôi
+  trước ngực, tam giác sau lưng).
+- Khối `const teacher` — cô giáo áo dài: `aoDaiMat` đổi màu áo,
+  `panelProfile` đổi độ xoè của hai tà.
+- Hướng nhìn của học sinh lấy từ `teacherAnchor`; nếu dời cô giáo sang vị trí
+  khác thì cập nhật biến này để cả lớp quay theo.
 
 ## Chỉnh camera
 
