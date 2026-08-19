@@ -2,12 +2,19 @@ import * as THREE from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import anime from 'animejs';
 import * as CANNON from 'cannon-es';
+import { buildStudent, buildTeacher, teacherAnchor, setCharacterQuality } from './characters.js';
 
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => [...document.querySelectorAll(s)];
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const PRODUCT_URL = 'https://properly-pursuable-compile.ngrok-free.dev/';
+const HUMAN_MODEL_URL = '/assets/michelle.glb';
+const INTRO_KEY = 'eduvision-intro-seen';
+
+$$('[data-product-link]').forEach((link) => { link.href = PRODUCT_URL; });
 
 // -----------------------------------------------------------------------------
 // Cinematic intro — adapted from the V2 intro, then transitions into the WebGL.
@@ -62,7 +69,12 @@ let introParticles = [];
 let introRaf = 0;
 let introStart = 0;
 let introFinished = false;
-const INTRO_DURATION = reducedMotion ? .3 : 6.55;
+let introFailSafe = 0;
+let introSeen = false;
+try { introSeen = sessionStorage.getItem(INTRO_KEY) === '1'; } catch { /* storage can be blocked */ }
+const INTRO_TIMELINE_DURATION = 6.55;
+const INTRO_DURATION = reducedMotion ? .3 : 3.25;
+const INTRO_TIME_SCALE = INTRO_TIMELINE_DURATION / INTRO_DURATION;
 
 function resizeIntroCanvas() {
   const dpr = Math.min(devicePixelRatio || 1, 1.6);
@@ -93,8 +105,9 @@ function drawIntroParticles(t) {
 }
 
 function introTick(now) {
-  const t=(now-introStart)/1000;
-  const p=clamp(t/INTRO_DURATION);
+  const elapsed=(now-introStart)/1000;
+  const t=elapsed*INTRO_TIME_SCALE;
+  const p=clamp(elapsed/INTRO_DURATION);
   introProgress.style.transform=`scaleX(${p})`;
   drawIntroParticles(t);
 
@@ -189,15 +202,21 @@ function introTick(now) {
     intro.style.backgroundColor=`rgba(1,2,4,${1-portal})`;
   }
 
-  if(t<INTRO_DURATION) introRaf=requestAnimationFrame(introTick);
+  if(elapsed<INTRO_DURATION) introRaf=requestAnimationFrame(introTick);
   else finishIntro();
 }
 
-function startIntro(){ introStart=performance.now(); introRaf=requestAnimationFrame(introTick); }
+function startIntro(){
+  if(introSeen){ finishIntro(); return; }
+  introStart=performance.now();
+  introRaf=requestAnimationFrame(introTick);
+}
 function finishIntro(){
   if(introFinished) return;
   introFinished=true;
   cancelAnimationFrame(introRaf);
+  clearTimeout(introFailSafe);
+  try { sessionStorage.setItem(INTRO_KEY,'1'); } catch { /* storage can be blocked */ }
   document.body.classList.add('site-ready');
   document.body.classList.remove('intro-lock');
   intro.style.transition = reducedMotion ? 'none' : 'opacity .9s cubic-bezier(.16,1,.3,1)';
@@ -206,7 +225,8 @@ function finishIntro(){
 }
 skipIntro.addEventListener('click',finishIntro);
 
-Promise.all([logoMain.decode().catch(()=>{}),...ghosts.map(g=>g.decode().catch(()=>{}))]).then(startIntro);
+introFailSafe=setTimeout(finishIntro,reducedMotion?600:4600);
+Promise.all([logoMain.decode().catch(()=>{}),...ghosts.map(g=>g.decode().catch(()=>{}))]).then(startIntro,finishIntro);
 
 // -----------------------------------------------------------------------------
 // WebGL world
@@ -235,6 +255,8 @@ renderer.shadowMap.enabled=qualityTier!=='low';
 renderer.shadowMap.type=THREE.PCFSoftShadowMap;
 renderer.shadowMap.autoUpdate=true;
 canvas.dataset.quality=qualityTier;
+// Nhân vật cache hình học nên phải chốt mức chi tiết trước khi dựng.
+setCharacterQuality(qualityTier);
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x050b12);
@@ -258,8 +280,8 @@ keyLight.shadow.mapSize.set(shadowResolution,shadowResolution);
 keyLight.shadow.camera.near=.5; keyLight.shadow.camera.far=30;
 keyLight.shadow.camera.left=-11; keyLight.shadow.camera.right=11; keyLight.shadow.camera.top=11; keyLight.shadow.camera.bottom=-11;
 keyLight.shadow.bias=-.00035; keyLight.shadow.normalBias=.025; scene.add(keyLight);
-const violetLight = new THREE.PointLight(0x8f4fff,16,24,2); violetLight.position.set(7,3,-1); scene.add(violetLight);
-const cyanLight = new THREE.PointLight(0x37e9db,13,22,2); cyanLight.position.set(-6,3,2); scene.add(cyanLight);
+const violetLight = new THREE.PointLight(0x8f4fff,8,24,2); violetLight.position.set(7,3,-1); scene.add(violetLight);
+const cyanLight = new THREE.PointLight(0x37e9db,7,22,2); cyanLight.position.set(-6,3,2); scene.add(cyanLight);
 const warmLight = new THREE.PointLight(0xffd3a0,0,20,2); warmLight.position.set(-3,4,-2); scene.add(warmLight);
 const classroomFill=new THREE.DirectionalLight(0xfff3df,1.65); classroomFill.position.set(5,6,8); scene.add(classroomFill);
 const selectedCharacterLight=new THREE.PointLight(0x9affed,0,7,2); scene.add(selectedCharacterLight);
@@ -360,227 +382,142 @@ const deskTopMat=standard(0x8a6043,{roughness:.48,metalness:.05});
 const legMat=standard(0x182127,{roughness:.38,metalness:.65});
 const bookMat=standard(0x306f89,{roughness:.7});
 // -----------------------------------------------------------------------------
-// Nhân vật lớp học Việt Nam — dựng hoàn toàn bằng code, không dùng model tải sẵn.
-// Cô giáo mặc áo dài (thân áo ôm, hai tà trước/sau, quần lụa ống rộng, cổ đứng).
-// Học sinh mặc đồng phục áo trắng, đeo khăn quàng đỏ và ngồi hướng về phía cô.
+// Nhân vật lớp học — dựng bằng code trong src/characters.js: thân và đầu là mặt
+// loft liền (không còn khớp cầu), tay chân là ống đi theo đường cong, da/vải/tóc
+// dùng MeshPhysicalMaterial với normal map sinh theo thủ tục. Chỉnh dáng người,
+// tóc, trang phục và tỉ lệ cơ thể ở file đó.
 // -----------------------------------------------------------------------------
-const skinMats=[0xedc09c,0xe2ac85,0xf3cba8,0xd59d76].map(c=>standard(c,{roughness:.83,metalness:0}));
-const hairMats=[0x120f0e,0x1c1512,0x241a15].map(c=>new THREE.MeshStandardMaterial({color:c,roughness:.84,metalness:.05,side:THREE.DoubleSide}));
-const eyeMat=standard(0x130f0c,{roughness:.28,metalness:.06});
-const browMat=standard(0x1a1310,{roughness:.9,metalness:0});
-const mouthMat=standard(0xa15f58,{roughness:.7,metalness:0});
-const shirtMat=new THREE.MeshStandardMaterial({color:0xeff4f7,roughness:.8,metalness:0,side:THREE.DoubleSide});
-const trouserMat=standard(0x222b45,{roughness:.83,metalness:0});
-const skirtMat=new THREE.MeshStandardMaterial({color:0x1c2540,roughness:.85,metalness:0,side:THREE.DoubleSide});
-const sockMat=standard(0xf2f6f7,{roughness:.88,metalness:0});
-const shoeMat=standard(0x15191f,{roughness:.5,metalness:.14});
-// Khăn quàng đỏ dùng DoubleSide vì đây là vải mỏng, nhìn thấy cả mặt trong.
-const scarfMat=new THREE.MeshStandardMaterial({color:0xcf1d26,roughness:.6,metalness:.02,side:THREE.DoubleSide});
-// Lụa áo dài: sheen của MeshPhysicalMaterial cho viền sáng mềm đúng chất lụa.
-const aoDaiMat=new THREE.MeshPhysicalMaterial({color:0xd8688c,roughness:.42,metalness:0,sheen:.9,sheenColor:new THREE.Color(0xffd8e6),sheenRoughness:.55,clearcoat:.14,clearcoatRoughness:.6,side:THREE.DoubleSide});
-const aoDaiTrouserMat=new THREE.MeshPhysicalMaterial({color:0xf3ece2,roughness:.5,metalness:0,sheen:.7,sheenColor:new THREE.Color(0xfffaf2),sheenRoughness:.6});
-const aoDaiTrimMat=standard(0xd8b271,{roughness:.34,metalness:.55});
 
-const limbAxis=new THREE.Vector3(0,1,0);
-// Chi thể được đặt bằng hai đầu mút thay vì góc quay, nên tư thế ngồi/giơ tay
-// luôn khớp với mặt bàn và ghế đã dựng sẵn.
-function limb(from,to,radius,material,capScale=1){
-  const start=new THREE.Vector3().fromArray(from);
-  const direction=new THREE.Vector3().fromArray(to).sub(start);
-  const length=direction.length();
-  const shaft=Math.max(.02,length-radius*2*capScale);
-  const m=new THREE.Mesh(new THREE.CapsuleGeometry(radius,shaft,4,12),material);
-  m.position.copy(start).addScaledVector(direction,.5);
-  m.quaternion.setFromUnitVectors(limbAxis,direction.normalize());
-  m.castShadow=true; m.receiveShadow=true; return m;
-}
-// Ống côn đặt theo hai đầu mút — dùng cho tay áo cộc, vốn có mép cắt thẳng chứ
-// không bo tròn như capsule.
-function tube(from,to,topRadius,bottomRadius,material){
-  const start=new THREE.Vector3().fromArray(from);
-  const direction=new THREE.Vector3().fromArray(to).sub(start);
-  const m=new THREE.Mesh(new THREE.CylinderGeometry(topRadius,bottomRadius,direction.length(),16,1,true),material);
-  m.position.copy(start).addScaledVector(direction,.5);
-  m.quaternion.setFromUnitVectors(limbAxis,direction.normalize());
-  m.castShadow=true; m.receiveShadow=true; return m;
-}
-// Thân áo và tà áo là mặt cong liên tục (lathe), không phải hộp ghép — đây là
-// điều kiện để bóng đổ và đường viền áo dài đọc đúng ở mọi góc camera.
-function latheMesh(profile,material,{segments=26,phiStart=0,phiLength=Math.PI*2,depth=1,position=[0,0,0],rotation=[0,0,0]}={}){
-  const geometry=new THREE.LatheGeometry(profile.map(([x,y])=>new THREE.Vector2(x,y)),segments,phiStart,phiLength);
-  if(depth!==1) geometry.scale(1,1,depth);
-  geometry.computeVertexNormals();
-  return mesh(geometry,material,position,rotation);
-}
-// Chỏm cầu cho tóc: cắt ngang đúng chân tóc nên không che mắt.
-function dome(radius,thetaLength,material,{position=[0,0,0],rotation=[0,0,0],scale=[1,1,1]}={}){
-  const m=mesh(new THREE.SphereGeometry(radius,24,16,0,Math.PI*2,0,thetaLength),material,position,rotation);
-  m.scale.set(...scale); return m;
-}
-// Dải vải thon dần — dùng cho hai đuôi khăn quàng buông trước ngực.
-function ribbonGeometry(width,length,taper){
-  const shape=new THREE.Shape();
-  shape.moveTo(-width/2,0); shape.lineTo(width/2,0);
-  shape.lineTo(width*taper/2,-length); shape.lineTo(-width*taper/2,-length); shape.closePath();
-  const geometry=new THREE.ExtrudeGeometry(shape,{depth:.012,bevelEnabled:false,curveSegments:1});
-  geometry.translate(0,0,-.006); return geometry;
-}
-// Tam giác khăn quàng sau lưng, uốn theo mặt lưng thay vì là một tấm phẳng.
-// Bán kính thân người thay đổi phi tuyến theo chiều cao, nên khăn quàng phải bám
-// đúng đường sinh của thân áo; nếu nội suy tuyến tính thì tấm vải sẽ lúc lồi ra
-// lúc chìm vào trong áo và gây z-fighting.
-function profileRadius(profile,y){
-  if(y<=profile[0][1]) return profile[0][0];
-  for(let i=0;i<profile.length-1;i++){
-    const [r0,y0]=profile[i],[r1,y1]=profile[i+1];
-    if(y<=y1) return r0+(r1-r0)*((y-y0)/(y1-y0||1));
-  }
-  return profile[profile.length-1][0];
-}
-function curvedTriangleGeometry(radiusAt,halfAngle,length,rows=6,cols=8,depth=1){
-  const positions=[],indices=[];
-  for(let i=0;i<=rows;i++){
-    const v=i/rows,span=halfAngle*(1-v*.92),r=radiusAt(v);
-    for(let j=0;j<=cols;j++){
-      const a=-span+span*2*(j/cols);
-      positions.push(Math.sin(a)*r,-length*v,Math.cos(a)*r*depth);
-    }
-  }
-  for(let i=0;i<rows;i++) for(let j=0;j<cols;j++){
-    const p=i*(cols+1)+j;
-    indices.push(p,p+cols+1,p+1,p+1,p+cols+1,p+cols+2);
-  }
-  const geometry=new THREE.BufferGeometry();
-  geometry.setAttribute('position',new THREE.Float32BufferAttribute(positions,3));
-  geometry.setIndex(indices); geometry.computeVertexNormals(); return geometry;
-}
-function markRest(...objects){ objects.forEach(o=>{ o.userData.restRotation=o.rotation.clone(); }); }
-// Cánh tay phải là một chuỗi liền mạch vai → khuỷu → cổ tay → bàn tay. Nếu chỉ
-// xếp cạnh nhau hai capsule rời thì ở cận cảnh sẽ thấy rõ khe hở giữa các khớp.
-function addArmChain(arm,{shoulder,elbow,wrist,sleeveMat,skinMat,upperRadius,lowerRadius,handLength,jointRadius,cuff=true,handRadius}){
-  const elbowVector=new THREE.Vector3().fromArray(elbow);
-  const wristVector=new THREE.Vector3().fromArray(wrist);
-  arm.add(limb(shoulder,elbow,upperRadius,sleeveMat));
-  arm.add(mesh(new THREE.SphereGeometry(jointRadius,14,12),sleeveMat,elbow));
-  arm.add(limb(elbow,wrist,lowerRadius,sleeveMat));
-  if(cuff) arm.add(mesh(new THREE.SphereGeometry(lowerRadius*1.02,12,10),sleeveMat,wrist));
-  const forward=wristVector.clone().sub(elbowVector).normalize();
-  const handEnd=wristVector.clone().addScaledVector(forward,handLength);
-  arm.add(limb(wrist,handEnd.toArray(),handRadius??lowerRadius*1.04,skinMat));
-}
-
-// Khăn quàng đỏ: vành cổ + phần phủ vai + nút thắt + hai đuôi trước ngực +
-// tam giác sau lưng. Từ camera hero ta nhìn lớp từ phía sau nên tam giác lưng
-// là chi tiết đọc rõ nhất.
-function addRedScarf(torso,y,frontSign,bodyProfile){
-  const scarf=new THREE.Group();
-  // Vành khăn gập quanh cổ áo, bán kính bám sát thân áo (depth .70 giống thân).
-  scarf.add(latheMesh([[.137,0],[.124,.05],[.114,.092]],scarfMat,{segments:20,depth:.74}));
-  // Phần vải phủ lên hai vai.
-  scarf.add(latheMesh([[.207,-.088],[.186,-.046],[.152,-.004]],scarfMat,{segments:22,depth:.70}));
-  const knot=mesh(new THREE.SphereGeometry(.033,12,10),scarfMat,[0,-.022,frontSign*.106]);
-  knot.scale.set(1.3,.92,.85); scarf.add(knot);
-  // Hai đuôi khăn buông trước ngực, nghiêng ra ngoài để ôm theo độ cong lồng ngực.
-  [-1,1].forEach(side=>{
-    scarf.add(mesh(ribbonGeometry(.072,.27,.40),scarfMat,[side*.04,-.034,frontSign*.108],[-frontSign*.21,0,side*.14]));
+const humanLoader=new GLTFLoader();
+const rigUpperWorld=new THREE.Vector3();
+const rigLowerWorld=new THREE.Vector3();
+const rigCurrentDirection=new THREE.Vector3();
+const rigTargetDirection=new THREE.Vector3();
+const rigWorldDelta=new THREE.Quaternion();
+const rigUpperWorldQuaternion=new THREE.Quaternion();
+const rigParentWorldQuaternion=new THREE.Quaternion();
+function storeRigRestPose(bones){
+  Object.values(bones).filter(Boolean).forEach((bone)=>{
+    bone.userData.restPosition=bone.position.clone();
+    bone.userData.restQuaternion=bone.quaternion.clone();
+    bone.userData.restRotation=bone.rotation.clone();
   });
-  // Tam giác sau lưng — mở rộng dần theo lưng nên không chìm vào trong áo.
-  const backTop=y-.055,backLength=.40;
-  scarf.add(mesh(curvedTriangleGeometry(v=>profileRadius(bodyProfile,backTop-backLength*v)+.014,.68,backLength,9,10,.70),scarfMat,[0,-.055,0],[0,frontSign>0?Math.PI:0,0]));
-  scarf.position.y=y; torso.add(scarf);
-  return scarf;
 }
-
-// Khuôn mặt: mắt, chân mày, mũi, miệng và tai. frontSign cho biết nhân vật
-// quay mặt về +Z hay -Z.
-function addFace(head,scale,skinMat,frontSign){
-  const f=frontSign,s=scale;
-  [-1,1].forEach(side=>{
-    const eye=mesh(new THREE.SphereGeometry(.019*s,12,10),eyeMat,[side*.056*s,.155*s,f*.126*s]);
-    eye.scale.set(1.35,.92,.7); head.add(eye);
-    head.add(mesh(new THREE.BoxGeometry(.052*s,.011*s,.014*s),browMat,[side*.058*s,.198*s,f*.122*s],[0,0,side*f*.13]));
-    const ear=mesh(new THREE.SphereGeometry(.031*s,12,10),skinMat,[side*.131*s,.142*s,.004*s]);
-    ear.scale.set(.5,1.2,.85); head.add(ear);
+function resetRigPose(bones){
+  Object.values(bones||{}).filter(Boolean).forEach((bone)=>{
+    if(bone.userData.restPosition) bone.position.copy(bone.userData.restPosition);
+    if(bone.userData.restQuaternion) bone.quaternion.copy(bone.userData.restQuaternion);
+    else if(bone.userData.restRotation) bone.rotation.copy(bone.userData.restRotation);
   });
-  const nose=mesh(new THREE.SphereGeometry(.023*s,12,10),skinMat,[0,.128*s,f*.135*s]);
-  nose.scale.set(1,.9,1.1); head.add(nose);
-  head.add(mesh(new THREE.BoxGeometry(.046*s,.013*s,.012*s),mouthMat,[0,.073*s,f*.13*s]));
 }
+function orientRigLimb(root,upper,lower,targetDirection){
+  if(!upper||!lower) return;
+  root.updateMatrixWorld(true);
+  upper.getWorldPosition(rigUpperWorld);
+  lower.getWorldPosition(rigLowerWorld);
+  rigCurrentDirection.copy(rigLowerWorld).sub(rigUpperWorld).normalize();
+  rigWorldDelta.setFromUnitVectors(rigCurrentDirection,targetDirection);
+  upper.getWorldQuaternion(rigUpperWorldQuaternion);
+  rigWorldDelta.multiply(rigUpperWorldQuaternion);
+  upper.parent.getWorldQuaternion(rigParentWorldQuaternion).invert();
+  upper.quaternion.copy(rigParentWorldQuaternion.multiply(rigWorldDelta)).normalize();
+  root.updateMatrixWorld(true);
+}
+function aimRigLimbDown(model,upper,lower,sideSign){
+  if(!upper||!lower) return;
+  model.updateMatrixWorld(true);
+  upper.getWorldPosition(rigUpperWorld);
+  lower.getWorldPosition(rigLowerWorld);
+  rigCurrentDirection.copy(rigLowerWorld).sub(rigUpperWorld).normalize();
+  const outward=Math.sign(rigCurrentDirection.x)||sideSign;
+  rigTargetDirection.set(outward*.17,-.982,rigCurrentDirection.z*.055).normalize();
+  orientRigLimb(model,upper,lower,rigTargetDirection);
+}
+function createTeacherCharacter(gltf){
+  const model=gltf.scene;
+  model.name='MichelleTeacher';
 
-// ---------------------------------------------------------------------------
-// Học sinh: tư thế ngồi thật (đùi nằm ngang dưới mặt bàn, cẳng chân thẳng
-// xuống sàn, cẳng tay đặt lên bàn), thân và đầu xoay về phía cô giáo.
-// ---------------------------------------------------------------------------
-const teacherAnchor=new THREE.Vector3(-2.75,0,-4.15);
-// Đường sinh thân áo học sinh: [bán kính, độ cao] tính từ gốc pivot thân trên.
-const studentTorsoProfile=[[.172,-.05],[.198,.06],[.216,.21],[.222,.38],[.208,.55],[.176,.68],[.12,.765],[.066,.81]];
-function buildStudent(index,aim){
-  const group=new THREE.Group();
-  const skinMat=skinMats[index%skinMats.length];
-  const hairMat=hairMats[index%hairMats.length];
-  const girl=index%2===1;
-  const legMaterial=girl?skinMat:trouserMat;
-
-  // Hông và chân — ngồi trên mặt ghế (mặt ghế cao .63), đùi đưa về phía bảng (-Z)
-  // và luồn dưới mặt bàn (mặt bàn cao 1.06).
-  const pelvis=mesh(new THREE.SphereGeometry(.172,18,14),girl?skirtMat:trouserMat,[0,.70,.30]);
-  pelvis.scale.set(1,.78,1.02); group.add(pelvis);
-  [-1,1].forEach(side=>{
-    group.add(limb([side*.115,.695,.24],[side*.135,.645,-.22],.092,girl?skirtMat:trouserMat));
-    group.add(limb([side*.135,.63,-.22],[side*.142,.105,-.30],.072,legMaterial));
-    if(girl) group.add(limb([side*.142,.27,-.275],[side*.144,.105,-.30],.068,sockMat));
-    group.add(mesh(new THREE.BoxGeometry(.13,.075,.26),shoeMat,[side*.145,.05,-.35]));
-  });
-  if(girl) group.add(latheMesh([[.27,-.16],[.235,-.04],[.19,.06]],skirtMat,{segments:20,depth:.92,position:[0,.71,.20],rotation:[-.34,0,0]}));
-
-  // Thân trên là một pivot riêng để code hoạt hình xoay người theo nhịp bài học.
-  const torso=new THREE.Group(); torso.position.set(0,.70,.285); group.add(torso);
-  torso.add(latheMesh(studentTorsoProfile,shirtMat,{segments:24,depth:.70}));
-  torso.add(mesh(new THREE.CylinderGeometry(.062,.07,.15,14),skinMat,[0,.845,-.008]));
-  [-1,1].forEach(side=>{
-    const shoulder=mesh(new THREE.SphereGeometry(.076,14,12),shirtMat,[side*.182,.70,0]);
-    shoulder.scale.set(1,.86,.82); torso.add(shoulder);
-  });
-  addRedScarf(torso,.755,-1,studentTorsoProfile);
-
-  // Đầu
-  const head=new THREE.Group(); head.position.set(0,.945,-.016); torso.add(head);
-  const skull=mesh(new THREE.SphereGeometry(.175,26,20),skinMat,[0,.165,0]);
-  skull.scale.set(.9,1.06,.94); head.add(skull);
-  addFace(head,1.18,skinMat,-1);
-  // Chỏm tóc cắt ngay trên chân mày; khối tóc sau nghiêng về +Z để phủ kín gáy —
-  // camera hero nhìn lớp từ phía sau nên đây là phần tóc thấy rõ nhất.
-  head.add(dome(.186,1.06,hairMat,{position:[0,.166,.008],scale:[1,.98,1.02]}));
-  const hairStyle=index%4;
-  if(hairStyle===0) head.add(dome(.19,1.44,hairMat,{position:[0,.15,.024],rotation:[.55,0,0]}));
-  else if(hairStyle===1){
-    head.add(dome(.196,1.62,hairMat,{position:[0,.146,.026],rotation:[.46,0,0],scale:[1,1,.96]}));
-  }else if(hairStyle===2){
-    head.add(dome(.19,1.5,hairMat,{position:[0,.148,.024],rotation:[.5,0,0]}));
-    head.add(limb([0,.11,.145],[0,-.045,.285],.054,hairMat));
-  }else{
-    head.add(dome(.192,1.52,hairMat,{position:[0,.148,.024],rotation:[.48,0,0]}));
-    [-1,1].forEach(side=>head.add(limb([side*.135,.085,.10],[side*.178,-.065,.165],.048,hairMat)));
+  // TPose chỉ được dùng làm mốc rig tĩnh. SambaDance tuyệt đối không được phát.
+  const tPose=gltf.animations.find((clip)=>clip.name==='TPose');
+  if(tPose){
+    const mixer=new THREE.AnimationMixer(model);
+    const action=mixer.clipAction(tPose);
+    action.play();
+    mixer.setTime(Math.min(.05,tPose.duration));
+    action.paused=true;
+    model.userData.referenceMixer=mixer;
   }
 
-  // Cánh tay: pivot ở vai, cẳng tay và bàn tay đặt lên mặt bàn (cao 1.06).
-  const arms=[-1,1].map(side=>{
-    const arm=new THREE.Group(); arm.position.set(side*.205,.685,0); torso.add(arm);
-    // Tay áo cộc của đồng phục có mép cắt thẳng, phần còn lại là da tay.
-    arm.add(tube([0,.03,0],[side*.028,-.14,-.02],.072,.062,shirtMat));
-    addArmChain(arm,{
-      shoulder:[side*.026,-.115,-.018],elbow:[side*.038,-.235,-.06],wrist:[side*.022,-.275,-.40],
-      sleeveMat:skinMat,skinMat,upperRadius:.052,lowerRadius:.045,handLength:.085,jointRadius:.049,cuff:false,handRadius:.052
+  model.updateMatrixWorld(true);
+  const bounds=new THREE.Box3().setFromObject(model);
+  const size=bounds.getSize(new THREE.Vector3());
+  const scale=2.14/Math.max(size.y,.001);
+  model.scale.multiplyScalar(scale);
+  model.updateMatrixWorld(true);
+  bounds.setFromObject(model);
+  const center=bounds.getCenter(new THREE.Vector3());
+  model.position.x-=center.x;
+  model.position.z-=center.z;
+  model.position.y-=bounds.min.y;
+
+  model.traverse((object)=>{
+    if(!object.isMesh) return;
+    object.castShadow=qualityTier!=='low';
+    object.receiveShadow=true;
+    object.frustumCulled=false;
+    if(object.isSkinnedMesh) object.normalizeSkinWeights();
+    const source=Array.isArray(object.material)?object.material:[object.material];
+    const materials=source.map((material)=>{
+      const next=material.clone();
+      next.metalness=0;
+      next.roughness=Math.max(.56,next.roughness??.56);
+      next.envMapIntensity=.72;
+      if(next.map){ next.map.colorSpace=THREE.SRGBColorSpace; next.map.anisotropy=maxAnisotropy; }
+      if(next.normalMap) next.normalMap.anisotropy=maxAnisotropy;
+      next.needsUpdate=true;
+      return next;
     });
-    return arm;
+    object.material=Array.isArray(object.material)?materials:materials[0];
   });
 
-  // Xoay về phía cô: thân ghế xoay ít, thân trên và đầu xoay thêm cho đủ hướng.
-  group.rotation.y=aim*.34;
-  torso.rotation.y=aim*.30;
-  head.rotation.y=aim*.36;
-  markRest(torso,head,arms[0],arms[1]);
-  return {group,bones:{spine:torso,head,leftArm:arms[0],rightArm:arms[1]}};
+  // GLTFLoader làm sạch dấu ':' trong tên node, nên tra rig bằng tên chuẩn hóa
+  // thay vì phụ thuộc nguyên văn tên Mixamo trong file nguồn.
+  const rigNodes=new Map();
+  model.traverse((object)=>{
+    const normalized=object.name.replace(/[^a-z0-9]/gi,'').toLowerCase();
+    if(normalized) rigNodes.set(normalized,object);
+  });
+  const get=(name)=>rigNodes.get(`mixamorig${name}`.toLowerCase());
+  const bones={
+    hips:get('Hips'),spine:get('Spine1')||get('Spine'),chest:get('Spine2'),neck:get('Neck'),head:get('Head'),
+    leftArm:get('LeftArm'),leftForeArm:get('LeftForeArm'),leftHand:get('LeftHand'),
+    rightArm:get('RightArm'),rightForeArm:get('RightForeArm'),rightHand:get('RightHand')
+  };
+  // Chuyển T-pose thành tư thế đứng trung tính bằng hướng xương trong world
+  // space. Cách này không phụ thuộc trục Euler do phần mềm xuất GLB lựa chọn.
+  aimRigLimbDown(model,bones.leftArm,bones.leftForeArm,-1);
+  aimRigLimbDown(model,bones.rightArm,bones.rightForeArm,1);
+  if(bones.leftForeArm) bones.leftForeArm.rotation.x-=.10;
+  if(bones.rightForeArm) bones.rightForeArm.rotation.x+=.12;
+  if(bones.hips) bones.hips.rotation.z+=.012;
+  storeRigRestPose(bones);
+  model.userData.bones=bones;
+  return model;
+}
+async function loadHumanCharacter(teacherRoot,fallback){
+  try{
+    const gltf=await humanLoader.loadAsync(HUMAN_MODEL_URL);
+    const model=createTeacherCharacter(gltf);
+    teacherRoot.remove(fallback);
+    teacherRoot.add(model);
+    teacherRoot.userData.bones=model.userData.bones;
+    teacherRoot.userData.characterMode='gltf';
+    canvas.dataset.teacherModel='ready';
+  }catch(error){
+    teacherRoot.userData.characterMode='procedural-fallback';
+    teacherRoot.userData.modelError=error instanceof Error?error.message:String(error);
+    canvas.dataset.teacherModel='fallback';
+  }
 }
 
 for(let row=0;row<3;row++){
@@ -619,78 +556,26 @@ for(let row=0;row<3;row++){
 }
 
 // ---------------------------------------------------------------------------
-// Cô giáo Việt Nam mặc áo dài — đứng cạnh bục giảng, quay mặt về phía lớp (+Z).
-// Áo dài gồm: cổ đứng, thân áo ôm, hai tà trước/sau xẻ ở hông, quần lụa ống
-// rộng. Hai tà là hai cung lathe nên khe xẻ hai bên hiện ra đúng như vải thật.
+// Giáo viên dùng Michelle GLB làm visual chính. Bản procedural chỉ xuất hiện
+// trong lúc tải hoặc khi asset lỗi, còn root bên ngoài được giữ ổn định để
+// raycast/drag/return-home không phải đăng ký lại.
 // ---------------------------------------------------------------------------
 const teacher=new THREE.Group();
-const teacherSkin=skinMats[1];
-const teacherHair=hairMats[0];
-const teacherBody=new THREE.Group(); teacher.add(teacherBody);
-
-// Quần lụa ống rộng
-[-1,1].forEach(side=>{
-  teacherBody.add(mesh(new THREE.CylinderGeometry(.108,.152,1.0,18,1,true),aoDaiTrouserMat,[side*.112,.545,.005],[0,0,side*-.012]));
-  const shoe=mesh(new THREE.SphereGeometry(.075,14,10),standard(0xe6d9cb,{roughness:.42,metalness:.1}),[side*.115,.045,.03]);
-  shoe.scale.set(.72,.55,1.35); teacherBody.add(shoe);
-});
-
-// Hai tà áo dài — cung trước phủ mặt +Z, cung sau phủ mặt -Z, hở hai bên hông.
-const panelProfile=[[.268,-.94],[.258,-.72],[.242,-.5],[.226,-.3],[.212,-.14],[.203,0]];
-teacherBody.add(latheMesh(panelProfile,aoDaiMat,{segments:22,depth:.86,phiStart:-Math.PI*.44,phiLength:Math.PI*.88,position:[0,1.07,0]}));
-teacherBody.add(latheMesh(panelProfile,aoDaiMat,{segments:22,depth:.86,phiStart:Math.PI*.56,phiLength:Math.PI*.88,position:[0,1.07,0]}));
-
-// Thân áo ôm từ hông lên vai
-const torsoGroup=new THREE.Group(); torsoGroup.position.set(0,1.06,0); teacherBody.add(torsoGroup);
-torsoGroup.add(latheMesh([[.201,-.02],[.192,.09],[.166,.21],[.172,.32],[.199,.43],[.196,.53],[.168,.62],[.115,.68],[.082,.70]],aoDaiMat,{segments:26,depth:.74}));
-torsoGroup.add(mesh(new THREE.CylinderGeometry(.058,.066,.13,14),teacherSkin,[0,.735,0]));
-// Cổ áo đứng đặc trưng của áo dài, viền chỉ vàng
-torsoGroup.add(mesh(new THREE.CylinderGeometry(.078,.088,.115,18,1,true),aoDaiMat,[0,.755,0]));
-torsoGroup.add(mesh(new THREE.TorusGeometry(.079,.006,8,24),aoDaiTrimMat,[0,.812,0],[Math.PI/2,0,0]));
-// Hàng nút chạy chéo từ cổ xuống sườn phải — dấu nhận dạng của áo dài
-const placketCurve=new THREE.CatmullRomCurve3([
-  new THREE.Vector3(0,.70,.108),new THREE.Vector3(-.056,.63,.122),
-  new THREE.Vector3(-.108,.55,.096),new THREE.Vector3(-.152,.46,.026),
-  new THREE.Vector3(-.168,.36,-.02)
-]);
-torsoGroup.add(mesh(new THREE.TubeGeometry(placketCurve,26,.007,6,false),aoDaiTrimMat));
-[.16,.44,.72].forEach(u=>{
-  const p=placketCurve.getPoint(u);
-  torsoGroup.add(mesh(new THREE.SphereGeometry(.014,10,8),aoDaiTrimMat,[p.x,p.y,p.z]));
-});
-
-// Đầu và tóc dài
-const teacherHead=new THREE.Group(); teacherHead.position.set(0,.80,0); torsoGroup.add(teacherHead);
-const teacherSkull=mesh(new THREE.SphereGeometry(.152,28,22),teacherSkin,[0,.135,0]);
-teacherSkull.scale.set(.9,1.08,.95); teacherHead.add(teacherSkull);
-addFace(teacherHead,1.02,teacherSkin,1);
-teacherHead.add(dome(.161,1.02,teacherHair,{position:[0,.138,-.006],scale:[1,1,1.02]}));
-teacherHead.add(latheMesh([[.158,-.52],[.176,-.34],[.188,-.16],[.183,0],[.166,.11],[.13,.17]],teacherHair,{segments:24,phiStart:Math.PI*.4,phiLength:Math.PI*1.2,depth:.98,position:[0,.135,.01]}));
-[-1,1].forEach(side=>{
-  teacherHead.add(mesh(new THREE.SphereGeometry(.014,10,8),aoDaiTrimMat,[side*.132,.10,.012]));
-});
-
-// Cánh tay: tay trái đưa lên giới thiệu học liệu trên bảng, tay phải thả tự
-// nhiên dọc thân. Tay áo dài ôm suốt tới cổ tay nên chỉ bàn tay là màu da.
-const teacherArms={};
-[-1,1].forEach(side=>{
-  const arm=new THREE.Group(); arm.position.set(side*.176,.60,0); torsoGroup.add(arm);
-  const raised=side>0;
-  arm.add(mesh(new THREE.SphereGeometry(.058,14,12),aoDaiMat,[0,-.01,0]));
-  addArmChain(arm,{
-    shoulder:[0,-.02,0],
-    elbow:raised?[side*.20,.075,.05]:[side*.05,-.245,.028],
-    wrist:raised?[side*.375,.185,.085]:[side*.028,-.485,.072],
-    sleeveMat:aoDaiMat,skinMat:teacherSkin,
-    upperRadius:.053,lowerRadius:.044,handLength:.125,jointRadius:.05
-  });
-  if(raised) teacherArms.left=arm; else teacherArms.right=arm;
-});
-
-markRest(torsoGroup,teacherHead,teacherArms.left,teacherArms.right);
-teacher.userData.bones={spine:torsoGroup,head:teacherHead,leftArm:teacherArms.left,rightArm:teacherArms.right};
+const teacherFallback=buildTeacher();
+teacherFallback.rotation.y=Math.PI;
+teacher.add(teacherFallback);
+teacher.userData.bones=teacherFallback.userData.bones;
+teacher.userData.characterMode='loading';
 teacher.position.set(-2.75,0,-4.15); classroom.add(teacher);
+loadHumanCharacter(teacher,teacherFallback);
 const podium=mesh(new THREE.BoxGeometry(1.35,1.05,.75),standard(0x513a2c,{roughness:.48,metalness:.16}),[-4.65,.52,-4.6]); classroom.add(podium);
+
+// Ánh sáng nhân vật tách khỏi neon UI: key ấm từ bảng, fill trung tính và rim
+// xanh rất nhẹ để da/vải đọc tự nhiên mà vẫn hòa vào không gian công nghệ.
+const teacherKeyLight=new THREE.SpotLight(0xffead2,qualityTier==='low'?2.2:3.8,10,Math.PI*.22,.72,1.35);
+teacherKeyLight.position.set(-.5,5.1,-1.0); teacherKeyLight.target=teacher; teacherKeyLight.castShadow=qualityTier==='high'; classroom.add(teacherKeyLight);
+const teacherRimLight=new THREE.PointLight(0x9ddfff,qualityTier==='low'?.7:1.35,6.5,2);
+teacherRimLight.position.set(-3.6,3.1,-6.1); classroom.add(teacherRimLight);
 
 // Ceiling camera
 const classroomCam=new THREE.Group();
@@ -715,21 +600,100 @@ for(let i=0;i<3;i++){ const r=mesh(new THREE.TorusGeometry(.72+i*.14,.015,8,80),
 const agentLight=new THREE.PointLight(0x40e7df,5.5,7,2); agentGroup.add(agentLight);
 agentGroup.position.set(-4.35,3.15,-4.15); agentGroup.scale.setScalar(.001); scene.add(agentGroup);
 
-// Mô hình tế bào 3D nổi giữa lớp, xuất hiện ở phân cảnh bài giảng.
-const solar=new THREE.Group(); scene.add(solar); solar.position.set(1.9,2.75,-3.7); solar.scale.setScalar(.001);
-const cellMembrane=mesh(new THREE.IcosahedronGeometry(1.52,4),new THREE.MeshPhysicalMaterial({color:0x4be7b1,roughness:.16,metalness:.08,transparent:true,opacity:.18,transmission:.18,emissive:0x167a63,emissiveIntensity:1.25,side:THREE.DoubleSide})); solar.add(cellMembrane);
-const cellShell=mesh(new THREE.IcosahedronGeometry(1.63,2),new THREE.MeshBasicMaterial({color:0x5ef1d0,wireframe:true,transparent:true,opacity:.22,blending:THREE.AdditiveBlending})); solar.add(cellShell);
-const nucleus=mesh(new THREE.SphereGeometry(.53,40,40),new THREE.MeshStandardMaterial({color:0xb373ed,roughness:.22,emissive:0x6234a2,emissiveIntensity:1.55}),[-.16,.08,.08]); solar.add(nucleus);
-const nucleolus=mesh(new THREE.SphereGeometry(.19,28,28),new THREE.MeshStandardMaterial({color:0xf0a8ff,roughness:.18,emissive:0xa548c5,emissiveIntensity:1.6}),[-.28,.13,.36]); solar.add(nucleolus);
-const vacuole=mesh(new THREE.SphereGeometry(.62,32,32),new THREE.MeshPhysicalMaterial({color:0x69c7ee,transparent:true,opacity:.18,roughness:.12,transmission:.25}),[.5,-.26,-.2]); vacuole.scale.set(1,.65,.72); solar.add(vacuole);
-const modelBase=mesh(new THREE.CylinderGeometry(1.75,2.08,.075,72),new THREE.MeshBasicMaterial({color:0x4ce8d3,transparent:true,opacity:.16,blending:THREE.AdditiveBlending}),[0,-1.85,0]); solar.add(modelBase);
+// Mô hình tế bào thực vật 3D nổi giữa lớp, xuất hiện ở phân cảnh bài giảng.
+// Tế bào thực vật có vách xenlulozơ nên hình hộp chứ không phải hình cầu, và
+// không bào trung tâm chiếm phần lớn thể tích, đẩy nhân ép sát về một bên.
+const solar=new THREE.Group(); scene.add(solar); solar.position.set(.8,3.28,-3.5); solar.scale.setScalar(.001);
+function roundedBox(width,height,depth,radius,segments=4){
+  const shape=new THREE.Shape();
+  const w=width/2-radius,h=height/2-radius;
+  shape.moveTo(-w-radius,-h);
+  shape.lineTo(-w-radius,h); shape.quadraticCurveTo(-w-radius,h+radius,-w,h+radius);
+  shape.lineTo(w,h+radius); shape.quadraticCurveTo(w+radius,h+radius,w+radius,h);
+  shape.lineTo(w+radius,-h); shape.quadraticCurveTo(w+radius,-h-radius,w,-h-radius);
+  shape.lineTo(-w,-h-radius); shape.quadraticCurveTo(-w-radius,-h-radius,-w-radius,-h);
+  const geometry=new THREE.ExtrudeGeometry(shape,{depth:depth-radius*2,bevelEnabled:true,bevelThickness:radius,bevelSize:radius,bevelSegments:segments,curveSegments:segments*2});
+  geometry.translate(0,0,-(depth-radius*2)/2); geometry.computeVertexNormals(); return geometry;
+}
+// Vách tế bào (cứng, dày) và màng sinh chất nằm sát bên trong.
+// Không dùng transmission ở đây: lớp kính mờ sẽ làm cả bào quan bên trong biến
+// mất, đúng lỗi bản trước — vách chỉ cần trong suốt để nhìn xuyên vào tế bào.
+const cellWall=mesh(roundedBox(3.34,2.58,2.4,.2),new THREE.MeshStandardMaterial({color:0x9ff0bb,roughness:.45,metalness:.04,transparent:true,opacity:.13,emissive:0x2f7d52,emissiveIntensity:.42,side:THREE.DoubleSide,depthWrite:false})); solar.add(cellWall);
+const cellShell=mesh(new THREE.BoxGeometry(3.36,2.6,2.42),new THREE.MeshBasicMaterial({color:0x7dfbb4,wireframe:true,transparent:true,opacity:.34,blending:THREE.AdditiveBlending})); solar.add(cellShell);
+const cellMembrane=mesh(roundedBox(3.06,2.34,2.16,.18),new THREE.MeshStandardMaterial({color:0x4be7b1,roughness:.2,transparent:true,opacity:.12,emissive:0x148a6c,emissiveIntensity:.5,side:THREE.DoubleSide,depthWrite:false})); solar.add(cellMembrane);
+// Không bào trung tâm — khối lớn nhất trong tế bào thực vật.
+const vacuole=mesh(new THREE.SphereGeometry(.94,36,30),new THREE.MeshStandardMaterial({color:0x63c4f2,transparent:true,opacity:.3,roughness:.18,emissive:0x1d6ea8,emissiveIntensity:.5,depthWrite:false}),[.18,.02,0]); vacuole.scale.set(1.12,.94,.86); solar.add(vacuole);
+// Nhân tế bào bị không bào ép sát vách, kèm hạch nhân bên trong.
+const nucleus=mesh(new THREE.SphereGeometry(.46,40,34),new THREE.MeshStandardMaterial({color:0xb373ed,roughness:.24,emissive:0x6234a2,emissiveIntensity:1.35}),[-1.08,.36,.28]); solar.add(nucleus);
+const nucleolus=mesh(new THREE.SphereGeometry(.17,24,20),new THREE.MeshStandardMaterial({color:0xf0a8ff,roughness:.18,emissive:0xa548c5,emissiveIntensity:1.5}),[-1.14,.42,.46]); solar.add(nucleolus);
+const modelBase=mesh(new THREE.CylinderGeometry(2.05,2.4,.075,72),new THREE.MeshBasicMaterial({color:0x4ce8d3,transparent:true,opacity:.16,blending:THREE.AdditiveBlending}),[0,-1.78,0]); solar.add(modelBase);
 const solarLight=new THREE.PointLight(0x55efc7,7,12,2); solar.add(solarLight);
-const planetSpecs=[[.88,.15,0x4be1a6],[1.08,.12,0x5bd5e6],[1.23,.13,0xe9ad5c],[.72,.1,0x69e58d],[1.34,.1,0xb889ff]];
-const planets=[];
-planetSpecs.forEach((sp,i)=>{
-  const organelle=mesh(new THREE.CapsuleGeometry(sp[1]*.6,sp[1]*1.65,5,12),new THREE.MeshStandardMaterial({color:sp[2],roughness:.3,emissive:sp[2],emissiveIntensity:.52}));
-  organelle.userData.radius=sp[0]; organelle.userData.speed=.23+i*.07; organelle.userData.phase=i*1.7; solar.add(organelle); planets.push(organelle);
+// Lục lạp: hình hạt đậu dẹt màu diệp lục, trôi chậm trong tế bào chất chứ
+// không quay theo quỹ đạo tròn như hành tinh (đó là lý do bản cũ trông giống
+// mô hình hệ mặt trời thay vì một tế bào).
+const organelles=[];
+const chloroplastGeometry=new THREE.SphereGeometry(.19,20,14);
+const chloroplastMat=new THREE.MeshStandardMaterial({color:0x37c46a,roughness:.34,emissive:0x1d7a3f,emissiveIntensity:.62});
+const grana=new THREE.MeshStandardMaterial({color:0x1c8f4c,roughness:.5,emissive:0x0f5c30,emissiveIntensity:.5});
+[[-.85,-.55,.62],[.42,.86,.58],[1.02,-.62,.5],[-.5,.84,-.62],[.86,.5,-.66],[-1.0,-.2,-.5],[.2,-.88,-.44],[-.28,-.78,.74]].forEach((position,index)=>{
+  const chloroplast=new THREE.Group();
+  const body=mesh(chloroplastGeometry,chloroplastMat); body.scale.set(1.5,.62,1); chloroplast.add(body);
+  for(let s=-1;s<=1;s++) chloroplast.add(mesh(new THREE.CylinderGeometry(.052,.052,.052,10),grana,[s*.12,0,0]));
+  chloroplast.position.set(...position);
+  chloroplast.rotation.set(index*.7,index*1.1,index*.5);
+  chloroplast.userData={home:new THREE.Vector3(...position),speed:.35+index*.06,phase:index*1.9};
+  solar.add(chloroplast); organelles.push(chloroplast);
 });
+// Ti thể — hạt nhỏ hình que, giúp phân biệt với lục lạp.
+const mitochondriaMat=new THREE.MeshStandardMaterial({color:0xe98a6a,roughness:.38,emissive:0x9c4128,emissiveIntensity:.55});
+[[.72,-.2,.78],[-.66,.6,.7],[.5,-.72,-.78],[-.9,-.66,-.2]].forEach((position,index)=>{
+  const mitochondrion=mesh(new THREE.CapsuleGeometry(.062,.13,4,10),mitochondriaMat,position,[index*.9,index*.6,index*1.3]);
+  mitochondrion.userData={home:new THREE.Vector3(...position),speed:.5+index*.08,phase:index*2.3};
+  solar.add(mitochondrion); organelles.push(mitochondrion);
+});
+// Nhãn chú thích bay theo từng bộ phận — đây là thứ biến khối hình trừu tượng
+// thành học liệu đọc được. Nhãn luôn quay mặt về camera và có đường chỉ dẫn.
+function labelTexture(text){
+  const canvas=document.createElement('canvas'),scale=2;
+  const context=canvas.getContext('2d');
+  context.font=`600 ${28*scale}px "Be Vietnam Pro", system-ui, sans-serif`;
+  const width=Math.ceil(context.measureText(text).width)+52*scale,height=64*scale;
+  canvas.width=width; canvas.height=height;
+  const x=canvas.getContext('2d');
+  x.font=`600 ${28*scale}px "Be Vietnam Pro", system-ui, sans-serif`;
+  x.textBaseline='middle';
+  const radius=height/2;
+  x.beginPath();
+  x.moveTo(radius,0); x.lineTo(width-radius,0); x.arc(width-radius,radius,radius,-Math.PI/2,Math.PI/2);
+  x.lineTo(radius,height); x.arc(radius,radius,radius,Math.PI/2,-Math.PI/2); x.closePath();
+  x.fillStyle='rgba(4,14,20,.82)'; x.fill();
+  x.lineWidth=2*scale; x.strokeStyle='rgba(126,247,224,.55)'; x.stroke();
+  x.fillStyle='rgba(233,253,250,.97)'; x.fillText(text,26*scale,height/2+2*scale);
+  const texture=new THREE.CanvasTexture(canvas); texture.colorSpace=THREE.SRGBColorSpace; texture.anisotropy=maxAnisotropy;
+  return {texture,aspect:width/height};
+}
+const modelLabels=[];
+function addModelLabel(text,anchor,offset){
+  const {texture,aspect}=labelTexture(text);
+  // sizeAttenuation:false giữ nhãn ở cùng một cỡ chữ trên màn hình dù camera lùi
+  // xa hay lại gần — nếu để nhãn co theo phối cảnh thì ở cảnh toàn chúng chồng
+  // lên nhau và không đọc được.
+  const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:texture,transparent:true,opacity:0,depthTest:false,depthWrite:false,sizeAttenuation:false}));
+  const height=.046; sprite.scale.set(height*aspect,height,1);
+  const target=new THREE.Vector3(...anchor).add(new THREE.Vector3(...offset));
+  sprite.position.copy(target); sprite.renderOrder=6; solar.add(sprite);
+  const lineGeometry=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(...anchor),target]);
+  const line=new THREE.Line(lineGeometry,new THREE.LineBasicMaterial({color:0x8bfff1,transparent:true,opacity:0,depthTest:false,blending:THREE.AdditiveBlending}));
+  line.renderOrder=5; solar.add(line);
+  const dot=mesh(new THREE.SphereGeometry(.035,10,8),new THREE.MeshBasicMaterial({color:0xb8fff6,transparent:true,opacity:0,depthTest:false}),anchor);
+  dot.renderOrder=5; solar.add(dot);
+  modelLabels.push({sprite,line,dot});
+}
+addModelLabel('Vách tế bào',[1.67,1.29,0],[1.15,.85,.5]);
+addModelLabel('Nhân tế bào',[-1.08,.36,.28],[-1.35,1.25,.55]);
+addModelLabel('Không bào',[.18,.02,.78],[1.5,-1.15,.85]);
+addModelLabel('Lục lạp',[-.85,-.55,.62],[-1.45,-.95,.7]);
+
 let modelUserScale=1;
 let modelSpinSpeed=1;
 let modelExplode=0;
@@ -887,7 +851,7 @@ function liftAndRelease(character){
   characterReturns.delete(character); anime.remove(character.position);
   const home=character.userData.initialTransform.position;
   anime({targets:character.position,y:Math.max(character.position.y,home.y)+1.55,x:character.position.x+(character===teacher ? .42 : .28),duration:520,easing:'easeOutExpo',complete:()=>{
-    playUISound(260,.16,.05); setTimeout(()=>returnCharacterHome(character),260);
+    playUISound(260,.16,.18); setTimeout(()=>returnCharacterHome(character),260);
   }});
 }
 function updateCharacterReturns(dt,t){
@@ -896,7 +860,7 @@ function updateCharacterReturns(dt,t){
       state.velocityY-=7.8*dt; character.position.y+=state.velocityY*dt;
       character.rotation.z+=dt*1.15;
       if(character.position.y<=state.home.y){
-        character.position.y=state.home.y; character.rotation.z*=.25; playUISound(180,.11,.035); beginWalkHome(character);
+        character.position.y=state.home.y; character.rotation.z*=.25; playUISound(180,.11,.13); beginWalkHome(character);
       }
       return;
     }
@@ -909,7 +873,7 @@ function updateCharacterReturns(dt,t){
     character.rotation.z=Math.sin(t*8+(character.userData.phase||0))*.018;
     if(progress>=1){
       character.position.copy(state.home); character.rotation.copy(character.userData.initialTransform.rotation);
-      character.userData.isReturning=false; characterReturns.delete(character); playUISound(460,.09,.025);
+      character.userData.isReturning=false; characterReturns.delete(character); playUISound(460,.09,.1);
     }
   });
 }
@@ -922,7 +886,16 @@ function applyFX(){
   scanPulseMat.opacity=.32*fx.scan;
   halos.forEach((h,i)=>{ h.material.opacity=fx.scan*(i===5?.9:.28); h.scale.x=1+Math.sin(performance.now()*.002+i)*.03; });
   agentGroup.scale.setScalar(Math.max(.001,fx.agent));
-  solar.scale.setScalar(Math.max(.001,fx.solar*modelUserScale));
+  solar.scale.setScalar(Math.max(.001,fx.solar*modelUserScale*1.16));
+  // Nhãn có cỡ cố định trên màn hình nên không tự nhỏ đi khi mô hình thu về 0;
+  // phải tự tắt theo fx.solar, và chỉ hiện khi mô hình đã bung gần hết.
+  const labelReveal=smooth(clamp((fx.solar-.55)/.4));
+  modelLabels.forEach(({sprite,line,dot})=>{
+    sprite.material.opacity=labelReveal*.97;
+    line.material.opacity=labelReveal*.6;
+    dot.material.opacity=labelReveal*.9;
+    sprite.visible=line.visible=dot.visible=labelReveal>.01;
+  });
   const earthReveal=fx.remote<=.001 ? .001 : easeOutBack(clamp(fx.remote));
   remoteRig.scale.setScalar(Math.max(.001,earthReveal*earthZoom));
   earthScreenMaterial.opacity=smooth(clamp((fx.remote-.12)/.72))*.92;
@@ -932,8 +905,8 @@ function applyFX(){
   teacherStage.material.opacity=fx.solar*.32;
   core.scale.setScalar(Math.max(.001,fx.core));
   warmLight.intensity=5.6*fx.warm;
-  cyanLight.intensity=13*(1-fx.warm*.55);
-  violetLight.intensity=16*(1-fx.warm*.65);
+  cyanLight.intensity=7*(1-fx.warm*.55);
+  violetLight.intensity=8*(1-fx.warm*.65);
 }
 
 // -----------------------------------------------------------------------------
@@ -956,7 +929,7 @@ function computeAnchors(){
 computeAnchors();
 
 const keyframes = [
-  { id:'hero', cam:[0,3.8,10.2], target:[0,1.7,-1.8], fx:{scan:0,twin:0,agent:0,solar:0,remote:0,core:0,warm:0}, bloom:.78, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.45, rigRot:[0,0,0] },
+  { id:'hero', cam:[1.15,3.9,11], target:[-.65,1.82,-2.25], fx:{scan:0,twin:0,agent:0,solar:0,remote:0,core:0,warm:0}, bloom:.68, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.4, rigRot:[0,0,0] },
   { id:'vision', cam:[6.7,5.3,7.6], target:[0,1.25,.1], fx:{scan:1,twin:0,agent:0,solar:0,remote:0,core:0,warm:0}, bloom:.96, roomScale:1, roomPos:[0,0,0], scanY:Math.PI*.34, scanZ:-1.7, screenGlow:.45, rigRot:[0,0,0] },
   { id:'agent', cam:[-6.2,3.55,4.6], target:[-2.1,2.1,-3.7], fx:{scan:0,twin:0,agent:1,solar:0,remote:0,core:0,warm:0}, bloom:1.05, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:.7, rigRot:[0,0,0] },
   { id:'simulation', cam:[4.3,3.35,6.9], target:[-.15,2.05,-4.05], fx:{scan:0,twin:0,agent:.02,solar:1,remote:0,core:0,warm:0}, bloom:1.02, roomScale:1, roomPos:[0,0,0], scanY:0, scanZ:2.6, screenGlow:1.35, rigRot:[0,0,0] },
@@ -1015,7 +988,7 @@ function applyScrollWorld(y){
   const section=sceneSections[active] || sceneSections[0];
   if(section){
     $('#sceneIndex').textContent=section.dataset.index; $('#sceneName').textContent=section.dataset.name;
-    if(active!==lastAudibleScene){ playUISound(250+active*38,.18,.035); lastAudibleScene=active; }
+    if(active!==lastAudibleScene){ playUISound(250+active*38,.18,.13); lastAudibleScene=active; }
   }
 }
 
@@ -1062,6 +1035,7 @@ let masterGain=null;
 let audioEnabled=false;
 let ambientStarted=false;
 
+let chimeTimer=0;
 function ensureAudio(){
   if(!audioContext){
     const AudioContext=window.AudioContext||window.webkitAudioContext;
@@ -1071,23 +1045,49 @@ function ensureAudio(){
   }
   audioContext.resume();
   if(!ambientStarted){
-    const padGain=audioContext.createGain(); padGain.gain.value=.035; padGain.connect(masterGain);
-    const filter=audioContext.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=420; filter.Q.value=.7; filter.connect(padGain);
-    [55,82.5,110].forEach((frequency,index)=>{
+    // Nền phải nằm trong dải loa laptop và điện thoại tái tạo được. Bản trước
+    // đặt cả ba oscillator ở 55–110 Hz và lọc thông thấp tại 420 Hz, đo ra
+    // -46 dBFS nên bật lên vẫn không nghe thấy gì.
+    const padGain=audioContext.createGain(); padGain.gain.value=.16; padGain.connect(masterGain);
+    const filter=audioContext.createBiquadFilter(); filter.type='lowpass'; filter.frequency.value=1500; filter.Q.value=.6; filter.connect(padGain);
+    // Có cả bồi âm ở 330–440 Hz vì loa điện thoại gần như không phát được dưới
+    // 250 Hz; nếu chỉ có trầm thì trên di động vẫn coi như không có tiếng.
+    [[110,'sine',.45],[165,'triangle',.24],[220,'sine',.2],[330,'sine',.16],[440,'sine',.09]].forEach(([frequency,type,level])=>{
       const osc=audioContext.createOscillator(); const gain=audioContext.createGain();
-      osc.type=index===1?'triangle':'sine'; osc.frequency.value=frequency; gain.gain.value=index===0?.52:index===1?.25:.12;
+      osc.type=type; osc.frequency.value=frequency; gain.gain.value=level;
       osc.connect(gain).connect(filter); osc.start();
     });
     const lfo=audioContext.createOscillator(),lfoGain=audioContext.createGain();
-    lfo.frequency.value=.09; lfoGain.gain.value=.009; lfo.connect(lfoGain).connect(padGain.gain); lfo.start();
+    lfo.frequency.value=.09; lfoGain.gain.value=.035; lfo.connect(lfoGain).connect(padGain.gain); lfo.start();
+    scheduleChime();
     ambientStarted=true;
   }
   return true;
 }
-function playUISound(frequency=420,duration=.1,volume=.055){
+// Vài nốt chuông thưa trên thang ngũ cung để người dùng nhận ra ngay là có
+// tiếng, thay vì chỉ một tiếng ù trầm liên tục.
+const chimeScale=[523.25,587.33,659.25,783.99,880];
+function scheduleChime(){
+  clearTimeout(chimeTimer);
+  chimeTimer=setTimeout(()=>{
+    if(audioEnabled&&audioContext){
+      const now=audioContext.currentTime,frequency=chimeScale[Math.floor(Math.random()*chimeScale.length)];
+      [1,2.01].forEach((ratio,index)=>{
+        const osc=audioContext.createOscillator(),gain=audioContext.createGain();
+        osc.type=index?'sine':'triangle'; osc.frequency.value=frequency*ratio;
+        gain.gain.setValueAtTime(.0001,now);
+        gain.gain.exponentialRampToValueAtTime(index?.04:.11,now+.02);
+        gain.gain.exponentialRampToValueAtTime(.0001,now+2.4);
+        osc.connect(gain).connect(masterGain); osc.start(now); osc.stop(now+2.5);
+      });
+    }
+    scheduleChime();
+  },3200+Math.random()*3600);
+}
+function playUISound(frequency=420,duration=.12,volume=.2){
   if(!audioEnabled||!ensureAudio()) return;
   const now=audioContext.currentTime,osc=audioContext.createOscillator(),gain=audioContext.createGain();
-  osc.type='sine'; osc.frequency.setValueAtTime(frequency,now); osc.frequency.exponentialRampToValueAtTime(frequency*1.18,now+duration);
+  osc.type='triangle'; osc.frequency.setValueAtTime(frequency,now); osc.frequency.exponentialRampToValueAtTime(frequency*1.18,now+duration);
   gain.gain.setValueAtTime(.0001,now); gain.gain.exponentialRampToValueAtTime(volume,now+.012); gain.gain.exponentialRampToValueAtTime(.0001,now+duration);
   osc.connect(gain).connect(masterGain); osc.start(now); osc.stop(now+duration+.02);
 }
@@ -1096,7 +1096,7 @@ function setAudioEnabled(enabled){
   audioEnabled=enabled;
   soundToggle.setAttribute('aria-pressed',String(enabled));
   soundLabel.textContent=enabled?'Không gian đang phát':'Đang tắt';
-  if(masterGain){ const now=audioContext.currentTime; masterGain.gain.cancelScheduledValues(now); masterGain.gain.linearRampToValueAtTime(enabled ? .32 : 0,now+.45); }
+  if(masterGain){ const now=audioContext.currentTime; masterGain.gain.cancelScheduledValues(now); masterGain.gain.setValueAtTime(masterGain.gain.value,now); masterGain.gain.linearRampToValueAtTime(enabled ? .55 : 0,now+.45); }
 }
 soundToggle.addEventListener('click',()=>setAudioEnabled(!audioEnabled));
 interactionToggle.addEventListener('click',()=>{
@@ -1105,7 +1105,7 @@ interactionToggle.addEventListener('click',()=>{
   interactionToggle.setAttribute('aria-pressed',String(enabled));
   interactionToggle.querySelector('small').textContent=enabled?'Kéo lên để nhấc nhân vật':'Bấm để kéo vật thể';
   if(!enabled) closeObjectInspector();
-  playUISound(enabled?560:320,.13,.065);
+  playUISound(enabled?560:320,.13,.22);
 });
 addEventListener('keydown',event=>{
   if(event.key==='Escape'&&document.body.classList.contains('interaction-mode')) interactionToggle.click();
@@ -1115,7 +1115,7 @@ document.addEventListener('pointerdown',event=>{
   if(!control) return;
   const ripple=document.createElement('i'); ripple.className='click-ripple'; ripple.style.left=`${event.clientX}px`; ripple.style.top=`${event.clientY}px`; document.body.appendChild(ripple);
   ripple.addEventListener('animationend',()=>ripple.remove(),{once:true});
-  playUISound(440+Math.random()*90,.085,.045);
+  playUISound(440+Math.random()*90,.085,.16);
 });
 
 // Bảng học liệu và trợ lý giọng nói trong phòng dạy 3D.
@@ -1234,7 +1234,7 @@ $$('.pad-grid button').forEach(button=>button.addEventListener('click',()=>{
   const dx=Number(button.dataset.earthX||0),dy=Number(button.dataset.earthY||0);
   if(button.classList.contains('pad-center')){ earthManualX=0; earthManualY=0; }
   else { earthManualX=clamp(earthManualX+dx,-.75,.75); earthManualY+=dy; }
-  playUISound(420,0.08,.025);
+  playUISound(420,0.08,.1);
 }));
 const earthZoomControl=$('#earthZoom');
 earthZoomControl?.addEventListener('input',event=>{
@@ -1375,6 +1375,8 @@ const clock=new THREE.Clock();
 let performanceFrames=0;
 let performanceWindowStart=performance.now();
 let lastQualityAdjustment=0;
+let renderingPaused=document.hidden;
+let renderRaf=0;
 function applyAdaptiveResolution(nextRatio){
   adaptivePixelRatio=clamp(nextRatio,.72,maximumPixelRatio);
   renderer.setPixelRatio(adaptivePixelRatio); renderer.setSize(innerWidth,innerHeight,false);
@@ -1398,7 +1400,71 @@ function tuneAdaptiveQuality(now){
     lastQualityAdjustment=now;
   }
 }
+function teacherGestureEnvelope(t){
+  const phase=(t+1.4)%13.5;
+  if(phase<2.3) return 0;
+  if(phase<3.5) return smooth((phase-2.3)/1.2);
+  if(phase<6.0) return 1;
+  if(phase<7.25) return 1-smooth((phase-6.0)/1.25);
+  return 0;
+}
+function teacherLookEnvelope(t){
+  const phase=(t+3.1)%17;
+  if(phase<5.2) return 0;
+  if(phase<6.1) return smooth((phase-5.2)/.9);
+  if(phase<8.3) return 1;
+  if(phase<9.4) return 1-smooth((phase-8.3)/1.1);
+  return 0;
+}
+const presentationArmOrigin=new THREE.Vector3();
+const presentationArmJoint=new THREE.Vector3();
+const presentationModelTarget=new THREE.Vector3();
+function updateHumanAnimation(character,t,presenting){
+  const bones=character.userData.bones;
+  if(!bones) return;
+  resetRigPose(bones);
+  const gesture=teacherGestureEnvelope(t)*presenting;
+  const look=teacherLookEnvelope(t);
+  const breathing=Math.sin(t*1.05)*.006;
+  if(character.userData.characterMode==='gltf'){
+    if(bones.hips) bones.hips.rotation.z+=Math.sin(t*.19)*.008;
+    if(bones.spine) bones.spine.rotation.x+=breathing;
+    if(bones.chest) bones.chest.rotation.y+=look*.055-gesture*.025;
+    if(bones.neck) bones.neck.rotation.y+=look*.07;
+    if(bones.head){ bones.head.rotation.y+=look*.12; bones.head.rotation.x-=gesture*.035; }
+    if(gesture>.001&&bones.leftArm&&bones.leftForeArm){
+      character.updateMatrixWorld(true);
+      bones.leftArm.getWorldPosition(presentationArmOrigin);
+      bones.leftForeArm.getWorldPosition(presentationArmJoint);
+      rigCurrentDirection.copy(presentationArmJoint).sub(presentationArmOrigin).normalize();
+      solar.getWorldPosition(presentationModelTarget);
+      rigTargetDirection.copy(presentationModelTarget).sub(presentationArmOrigin).normalize();
+      rigTargetDirection.z*=.3;
+      rigTargetDirection.normalize();
+      rigTargetDirection.lerpVectors(rigCurrentDirection,rigTargetDirection,gesture*.64).normalize();
+      orientRigLimb(character,bones.leftArm,bones.leftForeArm,rigTargetDirection);
+      if(bones.leftHand){
+        bones.leftForeArm.getWorldPosition(presentationArmOrigin);
+        bones.leftHand.getWorldPosition(presentationArmJoint);
+        rigCurrentDirection.copy(presentationArmJoint).sub(presentationArmOrigin).normalize();
+        rigTargetDirection.copy(presentationModelTarget).sub(presentationArmOrigin).normalize();
+        rigTargetDirection.z*=.35;
+        rigTargetDirection.normalize();
+        rigTargetDirection.lerpVectors(rigCurrentDirection,rigTargetDirection,gesture*.72).normalize();
+        orientRigLimb(character,bones.leftForeArm,bones.leftHand,rigTargetDirection);
+      }
+    }
+    if(bones.rightForeArm) bones.rightForeArm.rotation.x+=gesture*.045;
+  }else{
+    if(bones.head) bones.head.rotation.y+=look*.12;
+    if(bones.spine) bones.spine.rotation.y+=look*.04-gesture*.025;
+    if(bones.leftArm){ bones.leftArm.rotation.z-=gesture*.18; bones.leftArm.rotation.x+=gesture*.06; }
+    if(bones.rightArm) bones.rightArm.rotation.z+=gesture*.035;
+  }
+}
 function render(){
+  renderRaf=0;
+  if(renderingPaused) return;
   const dt=Math.min(clock.getDelta(),.05),t=clock.elapsedTime;
   const damping = reducedMotion ? 1 : .075;
   smoothScrollY += (targetScrollY - smoothScrollY) * damping;
@@ -1428,21 +1494,13 @@ function render(){
   if(!characterReturns.has(teacher)&&!(draggingObject&&selectedObject===teacher)){
     const teacherHome=teacher.userData.initialTransform.position;
     const presenting=clamp(fx.solar+fx.agent*.4);
-    teacher.position.x=teacherHome.x+Math.sin(t*.34)*.54*presenting;
-    teacher.position.z=teacherHome.z+Math.sin(t*.23+1.2)*.16*presenting;
-    teacher.position.y=teacherHome.y+Math.abs(Math.sin(t*1.65))*.012*presenting;
-    teacher.rotation.y=(teacher.userData.manualRotationY||0)+Math.sin(t*.32)*.12*presenting;
-    teacher.rotation.z=Math.sin(t*.7)*.006*presenting;
-    const bones=teacher.userData.bones;
-    // Trả các khớp về tư thế gốc trước khi cộng dao động, nếu không góc quay sẽ
-    // tích luỹ mỗi khung hình và cô giáo tự xoay tròn.
-    Object.values(bones).forEach(bone=>{ if(bone.userData.restRotation) bone.rotation.copy(bone.userData.restRotation); });
-    bones.head.rotation.y+=Math.sin(t*.48)*.14;
-    bones.spine.rotation.y+=Math.sin(t*.31)*.055*presenting;
-    // Tay trái giữ nhịp giới thiệu học liệu, tay phải đưa nhẹ theo lời giảng.
-    bones.leftArm.rotation.z+=Math.sin(t*.82)*.11-presenting*.2;
-    bones.leftArm.rotation.x+=Math.sin(t*.64+1.1)*.07;
-    bones.rightArm.rotation.z+=Math.sin(t*.71+1.4)*.075;
+    const gesture=teacherGestureEnvelope(t)*presenting;
+    teacher.position.x=teacherHome.x+gesture*.11+Math.sin(t*.19)*.018;
+    teacher.position.z=teacherHome.z-gesture*.025;
+    teacher.position.y=teacherHome.y+Math.sin(t*1.05)*.004;
+    teacher.rotation.y=teacher.userData.initialTransform.rotation.y+(teacher.userData.manualRotationY||0)+teacherLookEnvelope(t)*.035;
+    teacher.rotation.z=Math.sin(t*.19)*.004;
+    updateHumanAnimation(teacher,t,presenting);
   }
   updateCharacterReturns(dt,t);
   if(selectedObject&&isClassroomCharacter(selectedObject)){
@@ -1454,7 +1512,10 @@ function render(){
     selectedCharacterBeam.scale.y=1+Math.sin(t*3)*.035;
   }
 
-  const beamStart=new THREE.Vector3(.54,2.02,.12); teacher.localToWorld(beamStart);
+  const beamStart=new THREE.Vector3();
+  const presentationHand=teacher.userData.bones?.leftHand;
+  if(presentationHand) presentationHand.getWorldPosition(beamStart);
+  else { beamStart.set(.54,2.02,.12); teacher.localToWorld(beamStart); }
   const beamEnd=new THREE.Vector3(); solar.getWorldPosition(beamEnd); beamEnd.x-=.22; beamEnd.y+=.28;
   const beamPositions=presentationBeamGeometry.attributes.position;
   beamPositions.setXYZ(0,beamStart.x,beamStart.y,beamStart.z); beamPositions.setXYZ(1,beamEnd.x,beamEnd.y,beamEnd.z); beamPositions.needsUpdate=true;
@@ -1464,7 +1525,18 @@ function render(){
   teacherStage.scale.setScalar(.92+Math.sin(t*2.1)*.07);
   agentGroup.rotation.y=t*.45+(agentGroup.userData.manualRotationY||0);
   agentGroup.children.forEach((o,i)=>{ if(o.geometry?.type==='TorusGeometry') o.rotation.z=t*(.2+i*.05); });
-  planets.forEach(p=>{ const a=t*p.userData.speed*modelSpinSpeed+p.userData.phase,r=p.userData.radius*(1+modelExplode*.38); p.position.set(Math.cos(a)*r,Math.sin(a*.72)*r*.38,Math.sin(a)*r); p.rotation.set(a*.4,a,a*.25); });
+  // Bào quan trôi quanh vị trí gốc trong tế bào chất (dòng nguyên sinh), và giãn
+  // ra khi người dùng bấm "Tách lớp" — không quay quỹ đạo tròn quanh tâm.
+  organelles.forEach(organelle=>{
+    const {home,speed,phase}=organelle.userData;
+    const drift=t*speed*modelSpinSpeed+phase;
+    organelle.position.set(
+      home.x*(1+modelExplode*.55)+Math.sin(drift)*.075,
+      home.y*(1+modelExplode*.55)+Math.sin(drift*.83+1.4)*.06,
+      home.z*(1+modelExplode*.55)+Math.cos(drift*.71)*.07
+    );
+    organelle.rotation.y+=dt*.24*modelSpinSpeed; organelle.rotation.x+=dt*.11*modelSpinSpeed;
+  });
   solar.rotation.y=t*.16*modelSpinSpeed+(solar.userData.manualRotationY||0); solar.rotation.x=Math.sin(t*.24)*.08;
   cellShell.rotation.y=-t*.24*modelSpinSpeed; cellShell.rotation.z=t*.12;
   physicsWorld.step(1/60,dt,3);
@@ -1493,9 +1565,25 @@ function render(){
   camera.lookAt(cameraTarget);
   composer.render();
   tuneAdaptiveQuality(performance.now());
-  requestAnimationFrame(render);
+  renderRaf=requestAnimationFrame(render);
 }
-render();
+function startRenderLoop(){
+  if(renderingPaused||renderRaf) return;
+  clock.getDelta();
+  renderRaf=requestAnimationFrame(render);
+}
+document.addEventListener('visibilitychange',()=>{
+  renderingPaused=document.hidden;
+  if(renderingPaused){
+    if(renderRaf) cancelAnimationFrame(renderRaf);
+    renderRaf=0;
+  }else{
+    performanceFrames=0;
+    performanceWindowStart=performance.now();
+    startRenderLoop();
+  }
+});
+startRenderLoop();
 
 function onResize(){
   resizeIntroCanvas();

@@ -61,20 +61,59 @@ Thư mục xuất bản là `dist/`. Các đường dẫn không khớp tài ngu
 - `index.html` — toàn bộ section/copy/UI.
 - `src/style.css` — cinematic visual system + responsive.
 - `src/main.js` — intro animation, Three.js world, native scroll interpolation.
+- `src/characters.js` — toàn bộ hệ nhân vật (cô giáo + học sinh).
 - `public/assets/logo-icon.png` — logo EduVision.
 
 ## Chỉnh nhân vật
 
-Trong `src/main.js`, phần "Nhân vật lớp học Việt Nam":
+Giáo viên chính dùng skinned model `assets/michelle.glb`, được nạp bằng
+`GLTFLoader` trong `src/main.js`. Clip `TPose` chỉ dùng làm mốc rig; chuyển động
+lớp học được điều khiển trực tiếp trên Mixamo bones (idle, nhìn lớp, chuyển
+trọng lượng và cử chỉ thuyết trình), không phát `SambaDance`. Nếu GLB tải lỗi,
+giáo viên procedural từ `src/characters.js` sẽ xuất hiện làm fallback.
 
-- `buildStudent()` — học sinh ngồi: áo trắng, khăn quàng đỏ, quần/váy đồng phục,
-  bốn kiểu tóc luân phiên theo `index%4`.
-- `addRedScarf()` — khăn quàng đỏ (vành cổ, phần phủ vai, nút thắt, hai đuôi
-  trước ngực, tam giác sau lưng).
-- Khối `const teacher` — cô giáo áo dài: `aoDaiMat` đổi màu áo,
-  `panelProfile` đổi độ xoè của hai tà.
-- Hướng nhìn của học sinh lấy từ `teacherAnchor`; nếu dời cô giáo sang vị trí
-  khác thì cập nhật biến này để cả lớp quay theo.
+Học sinh và fallback teacher nằm trong `src/characters.js`. Nhân vật procedural
+được dựng theo hướng nhìn **-Z** (cùng hướng lớp ngồi); fallback teacher được
+xoay 180° trong `main.js` để quay xuống lớp.
+
+**Tỉ lệ cơ thể** — `STUDENT` và `TEACHER` giữ các mốc thế giới, mọi kích thước
+khác suy ra từ `headHeight` (HH). Học sinh ngồi 4.4 head-units, cô giáo đứng 7.4
+— đúng nhân trắc học người thật. Đổi `headHeight` là đổi toàn bộ dáng người, nên
+đây là chỗ chỉnh đầu tiên nếu thấy nhân vật "bị lùn" hay "đầu to".
+
+**Hình học** — bốn hàm dựng nên mọi thứ:
+
+- `loftGeometry()` — xâu các lát cắt ngang thành một mặt liền: thân, cổ, đầu,
+  tà áo dài. Nhận `phiStart`/`phiLength` để dựng cung hở (hai tà áo dài).
+- `tubeAlong()` — ống đi theo đường cong, tiết diện elip đổi dần: tay, chân,
+  lọn tóc. `radiusAt(t)` trả `[rNormal, rBinormal, ao]`; với đường cong chạy
+  ngang thì `rNormal` là trục **độ sâu**, chạy dọc thì là trục **ngang**.
+- `sculpt()` — đẩy đỉnh trong một vùng elip: gờ mày, sống mũi, hốc mắt, gò má.
+  Danh sách khối nằm ở `headSculptBlobs()`; **vỏ tóc dùng lại đúng danh sách
+  này**, nếu không nó sẽ treo lơ lửng trên các vùng đã khoét lõm.
+- `curvedPanelGeometry()` — tấm vải cong bám đường sinh thân: tam giác khăn quàng.
+
+**Khuôn mặt** — `HEAD_SECTIONS` là đường sinh hộp sọ (rộng .655 HH, sâu .849 HH),
+`FACE` là bộ mốc mắt/mày/tai/môi. Mắt là **mảng khe mi phẳng** áp lên da chứ
+không phải nhãn cầu hình cầu: hốc mắt chỉ được khoét lõm chứ không thủng, nên
+quả cầu luôn đâm xuyên qua da. Nếu chỉnh độ sâu hốc mắt thì phải chỉnh
+`FACE.eyeSurfaceZ` theo.
+
+**Tóc** — `buildHairShell()` lấy mẫu trên chính mặt sọ rồi đẩy ra ngoài, mỏng dần
+về mép (gáy tỉa fade vào da). `hairlineCurve(front, back)` đặt chân tóc theo `t`
+tính từ đỉnh đầu: trán ≈ .22–.25, gáy ≈ .74–.80. `longHairLocks()` xếp nhiều lọn
+chồng lớp — một mảng rộng duy nhất sẽ đọc ra tấm ván phẳng.
+
+**Trang phục** — `characterMaterials`: `aoDai` đổi màu áo cô giáo, `scarf` màu
+khăn quàng, `shirt` màu áo học sinh. Vải dùng `MeshPhysicalMaterial` có `sheen`
+và normal map sợi vải sinh theo thủ tục; bỏ `sheen` thì áo trắng thành sứ trắng.
+
+**Hiệu năng** — `setCharacterQuality('low'|'medium'|'high')` phải gọi **trước**
+khi dựng nhân vật vì hình học được cache. `main.js` đã gọi sẵn theo cấu hình máy
+dò được. Một học sinh ≈ 9.000 tam giác / 10 draw call.
+
+Hướng nhìn của học sinh lấy từ `teacherAnchor`; nếu dời cô giáo sang vị trí khác
+thì cập nhật biến này để cả lớp quay theo.
 
 ## Chỉnh camera
 

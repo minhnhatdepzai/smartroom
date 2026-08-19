@@ -4,8 +4,9 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="theme-color" content="#020408" />
-  <meta name="description" content="EduVision AI — Lớp học thông minh cùng suy nghĩ với bạn." />
-  <title>EduVision AI — Lớp học thông minh</title>
+  <meta name="description" content="EduVision AI — hệ điều hành AI kết nối thị giác, giọng nói, học liệu tương tác và tự động hóa cho lớp học thông minh." />
+  <title>EduVision AI — Hệ điều hành AI cho lớp học</title>
+  <link rel="icon" type="image/png" href="/assets/logo-icon.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&family=Manrope:wght@500;600;700&display=swap" rel="stylesheet" />
@@ -57,7 +58,7 @@
 
       <div class="intro-copy">
         <h1 class="wordmark" id="wordmark" aria-label="EduVision AI"></h1>
-        <p class="intro-tagline" id="introTagline">LỚP HỌC THÔNG MINH · THỊ GIÁC AI</p>
+        <p class="intro-tagline" id="introTagline">HỆ ĐIỀU HÀNH AI · LỚP HỌC THÔNG MINH</p>
         <p class="enter-line" id="enterLine">ĐANG MỞ CỬA VÀO LỚP HỌC</p>
       </div>
     </div>
@@ -68,14 +69,22 @@
     <div class="intro-progress"><i id="introProgress"></i></div>
   </div>
 
+  <script>
+    window.setTimeout(() => {
+      document.body?.classList.add('site-ready');
+      document.body?.classList.remove('intro-lock');
+      document.querySelector('#intro')?.remove();
+    }, 5000);
+  </script>
+
   <header class="topbar" id="topbar">
     <a class="brand" href="#hero" aria-label="Trang chủ EduVision AI">
       <img src="/assets/logo-icon.png" alt="" />
       <span>EduVision AI</span>
     </a>
     <div class="topbar-right">
-      <span class="system-status"><i></i> LỚP HỌC AI ĐANG KẾT NỐI</span>
-      <a class="demo-link" href="#cta">KHÁM PHÁ NGAY <span>↗</span></a>
+      <span class="system-status"><i></i> EDUVISION INTELLIGENCE ĐANG KẾT NỐI</span>
+      <a class="demo-link" href="https://properly-pursuable-compile.ngrok-free.dev/" data-product-link>VÀO SMART CLASSROOM <span>↗</span></a>
     </div>
   </header>
 
@@ -88,39 +97,58 @@
   </aside>
 
   <main id="site">
-    <section class="scene scene--hero" id="hero" data-index="01" data-name="LỚP HỌC">
+    <section class="scene scene--hero" id="hero" data-index="01" data-name="HỆ ĐIỀU HÀNH AI">
       <div class="hero-lockup reveal">
-        <p class="eyebrow"><span></span> EDUVISION AI / LỚP HỌC THÔNG MINH</p>
+        <p class="eyebrow"><span></span> EDUVISION AI · HỆ ĐIỀU HÀNH AI CHO LỚP HỌC</p>
         <h1>Lớp học<br><em>cùng bạn suy nghĩ.</em></h1>
-        <p class="lede">Một không gian dạy học nơi AI có thể nhìn, lắng nghe, hỗ trợ và biến lời nói của giáo viên thành hành động.</p>
+        <p class="lede">EduVision kết nối AI thị giác, giọng nói, học liệu tương tác và thiết bị lớp học trong một hệ thống duy nhất — để giáo viên điều khiển lớp học tự nhiên hơn và dành nhiều thời gian hơn cho học sinh.</p>
         <div class="hero-actions">
-          <a href="#vision" class="magnetic-btn">KHÁM PHÁ HỆ THỐNG <span>↓</span></a>
-          <p>CUỘN ĐỂ BƯỚC VÀO</p>
+          <a
+            href="https://properly-pursuable-compile.ngrok-free.dev/"
+            class="magnetic-btn hero-product-cta"
+            data-product-link
+            aria-label="Trải nghiệm EduVision Smart Classroom"
+          >
+            <span class="hero-product-cta__copy">
+              <small>TRẢI NGHIỆM SMART CLASSROOM</small>
+              <strong>VÀO HỆ THỐNG EDUVISION</strong>
+            </span>
+            <span class="hero-product-cta__icon" aria-hidden="true">↗</span>
+          </a>
+          <a href="#vision" class="hero-secondary-cta">XEM CÁCH HOẠT ĐỘNG <span>↓</span></a>
         </div>
+        <p class="hero-action-note">Mở nền tảng lớp học thông minh trên cùng tab</p>
       </div>
       <div class="hero-caption glass-card reveal">
-        <span>KHÔNG GIAN TRỰC TUYẾN</span>
+        <span>EDUVISION INTELLIGENCE LAYER</span>
         <strong>01</strong>
-        <p>Thị giác · Giọng nói · Tự động hóa · Mô phỏng</p>
+        <p>Nhìn · Nghe · Hiểu · Phản hồi — giáo viên quyết định</p>
       </div>
+    </section>
+
+    <section class="capability-strip reveal" aria-label="Bốn năng lực cốt lõi của EduVision">
+      <div><span>01</span><strong>AI VISION</strong><small>Hiểu tín hiệu trong lớp</small></div>
+      <div><span>02</span><strong>VOICE AI</strong><small>Điều khiển bằng lời nói</small></div>
+      <div><span>03</span><strong>3D LEARNING</strong><small>Học liệu tương tác tức thì</small></div>
+      <div><span>04</span><strong>TEACHER FIRST</strong><small>Con người luôn quyết định</small></div>
     </section>
 
     <section class="scene scene--vision" id="vision" data-index="02" data-name="THỊ GIÁC AI">
       <div class="copy-panel copy-panel--left reveal">
         <p class="eyebrow">01 / NHẬN BIẾT LỚP HỌC</p>
         <h2>AI nhận biết.<br><em>Giáo viên quyết định.</em></h2>
-        <p>Thị giác máy tính biến luồng camera thành các tín hiệu lớp học dễ hiểu để giáo viên biết nơi nào cần chú ý.</p>
+        <p>Thị giác máy tính chuyển luồng camera thành tín hiệu và ngữ cảnh dễ hiểu. EduVision chỉ đề xuất nơi cần xem xét; giáo viên luôn là người đánh giá và đưa ra quyết định.</p>
         <div class="feature-lines">
-          <span><i></i> Tín hiệu hỗ trợ tính trung thực học thuật</span>
-          <span><i></i> Tín hiệu về tư thế hoặc sự im lặng bất thường</span>
-          <span><i></i> Giáo viên luôn là người kiểm duyệt cuối cùng</span>
+          <span><i></i> Phát hiện tín hiệu, không tự động kết luận</span>
+          <span><i></i> Cung cấp ngữ cảnh để giáo viên xem xét</span>
+          <span><i></i> Quyết định cuối cùng luôn thuộc về giáo viên</span>
         </div>
       </div>
       <div class="floating-ui vision-ui glass-card reveal">
         <div class="ui-head"><span>EDUVISION / CAMERA 01</span><b>TRỰC TIẾP</b></div>
-        <div class="signal-row"><span>Học sinh 12</span><strong>Cần chú ý</strong></div>
+        <div class="signal-row"><span>Tín hiệu lớp học</span><strong>Cần giáo viên xem xét</strong></div>
         <div class="signal-bar"><i></i></div>
-        <small>TÍN HIỆU QUAN SÁT · NÊN XEM LẠI</small>
+        <small>AI ĐƯA NGỮ CẢNH · GIÁO VIÊN ĐÁNH GIÁ</small>
       </div>
     </section>
 
@@ -128,7 +156,7 @@
       <div class="copy-panel copy-panel--right reveal">
         <p class="eyebrow">02 / TRỢ LÝ AI GIỌNG NÓI</p>
         <h2>Chỉ cần nói.<br><em>Cả phòng phản hồi.</em></h2>
-        <p>Giáo viên không cần rời bài giảng để mở tài liệu, điều khiển thiết bị hay tạo hoạt động học tập.</p>
+        <p>Giáo viên nói theo cách tự nhiên. EduVision hiểu ý định, mở đúng học liệu và điều khiển thiết bị mà không làm gián đoạn mạch giảng.</p>
       </div>
       <div class="conversation glass-card reveal">
         <div class="conversation-orb"><i></i></div>
@@ -147,8 +175,8 @@
     <section class="scene scene--simulation" id="simulation" data-index="04" data-name="HỌC TẬP 3D">
       <div class="center-copy simulation-copy reveal">
         <p class="eyebrow">03 / PHÒNG DẠY HỌC 3D</p>
-        <h2>Giáo viên di chuyển.<br><em>Mô hình sống động.</em></h2>
-        <p>Cô giáo đi lại, chỉ vào từng cấu trúc và điều khiển học liệu. Học sinh quan sát, cử động, giơ tay; bạn có thể nhấc hoặc kéo từng người rồi xem họ tự trở về chỗ.</p>
+        <h2>Một lời nói.<br><em>Cả bài học chuyển động.</em></h2>
+        <p>EduVision biến lệnh tự nhiên của giáo viên thành hành động: mở học liệu, hiển thị mô hình 3D, phóng to cấu trúc hoặc chuyển nội dung mà không làm gián đoạn tiết học.</p>
       </div>
 
       <div class="lesson-dock glass-card reveal" aria-label="Học liệu bài giảng">
@@ -180,7 +208,7 @@
         <div>
           <span>TRỢ LÝ GIỌNG NÓI</span>
           <p id="voiceStatus">“EduVision, mở mô hình tế bào và bắt đầu bài giảng.”</p>
-          <small>Thử nói: “nhấc học sinh 3”, “thả về chỗ”, “xoay mô hình”, “phóng to Trái Đất”...</small>
+          <small>Thử nói: “mở mô hình tế bào”, “phóng to cấu trúc” hoặc “mở Trái Đất 3D”.</small>
         </div>
         <div class="voice-bars" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
       </div>
@@ -218,17 +246,18 @@
       <div class="copy-panel copy-panel--right reveal">
         <p class="eyebrow">05 / BẢN SAO SỐ</p>
         <h2>Nhìn thấy lớp học<br><em>trước khi thành hình.</em></h2>
-        <p>Mô phỏng không gian 3D để hình dung bố trí thiết bị, vùng quan sát camera và kịch bản lớp học.</p>
+        <p>Mô phỏng phòng học trước khi triển khai để xác định vị trí camera, vùng quan sát, điểm mù, màn hình và khu vực tương tác của giáo viên.</p>
         <div class="feature-lines">
           <span><i></i> Phạm vi quan sát của camera</span>
-          <span><i></i> Trực quan hóa điểm mù</span>
-          <span><i></i> Mô phỏng bố trí lớp học</span>
+          <span><i></i> Điểm mù và vùng cảm biến</span>
+          <span><i></i> Vị trí màn hình và thiết bị lớp học</span>
         </div>
       </div>
       <div class="twin-data glass-card reveal">
-        <span>BẢN SAO SỐ / PHÒNG A-204</span>
-        <div><strong>96%</strong><small>PHẠM VI CAMERA</small></div>
-        <div><strong>02</strong><small>ĐIỂM MÙ</small></div>
+        <span>MÔ PHỎNG DEMO / PHÒNG A-204</span>
+        <div><strong>96%</strong><small>VÙNG QUAN SÁT MINH HỌA</small></div>
+        <div><strong>02</strong><small>ĐIỂM MÙ MÔ PHỎNG</small></div>
+        <p class="twin-zones"><span>CAMERA</span><span>MÀN HÌNH</span><span>VÙNG TƯƠNG TÁC</span></p>
       </div>
     </section>
 
@@ -236,7 +265,14 @@
       <div class="center-copy center-copy--core reveal">
         <p class="eyebrow">06 / MỘT TRÍ TUỆ THỐNG NHẤT</p>
         <h2>Một trí tuệ.<br><em>Trọn vẹn lớp học.</em></h2>
-        <p>Giọng nói, thị giác, tự động hóa và phân tích không hoạt động riêng lẻ — chúng cùng đi qua một lớp trí tuệ thống nhất.</p>
+        <p>EduVision hợp nhất thị giác, giọng nói, học liệu và tự động hóa trong cùng một lớp trí tuệ để giáo viên không phải vận hành nhiều công cụ rời rạc.</p>
+      </div>
+      <div class="intelligence-flow glass-card reveal" aria-label="Luồng xử lý của EduVision Intelligence">
+        <div class="intelligence-flow__inputs"><span>VISION</span><span>VOICE</span><span>CONTENT</span><span>AUTOMATION</span></div>
+        <i aria-hidden="true">↓</i>
+        <strong>EDUVISION INTELLIGENCE</strong>
+        <i aria-hidden="true">↓</i>
+        <div class="intelligence-flow__teacher"><b>GIÁO VIÊN</b><small>Đánh giá · Quyết định · Hành động</small></div>
       </div>
       <div class="core-labels" aria-hidden="true">
         <span class="core-label core-label--a">THỊ GIÁC</span>
@@ -249,10 +285,11 @@
     <section class="scene scene--human" id="human" data-index="08" data-name="GIÁO VIÊN LÀ TRỌNG TÂM">
       <div class="human-copy reveal">
         <p class="eyebrow">07 / AI LẤY CON NGƯỜI LÀM TRỌNG TÂM</p>
-        <h2>Nhiều thời gian hơn<br><em>để giảng dạy.</em></h2>
+        <h2>AI xử lý thao tác.<br><em>Giáo viên dành thời gian cho con người.</em></h2>
         <div class="human-lines">
-          <p>Nhiều thời gian hơn để kết nối.</p>
-          <p>Nhiều thời gian hơn cho học sinh.</p>
+          <p>Ít thời gian chuyển đổi công cụ.</p>
+          <p>Nhiều thời gian quan sát và tương tác với học sinh.</p>
+          <p>Quyết định cuối cùng luôn thuộc về giáo viên.</p>
         </div>
         <p class="human-note">EduVision hỗ trợ phán đoán của giáo viên — không thay thế giáo viên.</p>
       </div>
@@ -261,19 +298,20 @@
     <section class="scene scene--cta" id="cta" data-index="09" data-name="EDUVISION AI">
       <div class="cta-lockup reveal">
         <img src="/assets/logo-icon.png" alt="EduVision AI" />
-        <p class="eyebrow">LỚP HỌC THÔNG MINH</p>
-        <h2>Sẵn sàng để lớp học<br><em>cùng suy nghĩ?</em></h2>
-        <p>Quan sát sâu hơn. Giảng dạy tự nhiên. Hành động tức thì.</p>
+        <p class="eyebrow">EDUVISION SMART CLASSROOM</p>
+        <h2>Sẵn sàng bước vào<br><em>lớp học thông minh?</em></h2>
+        <p>Trải nghiệm cách AI, giọng nói, học liệu tương tác và thiết bị lớp học vận hành trong một hệ thống duy nhất.</p>
         <a
           class="cta-button product-cta"
-          href="https://properly-pursuable-compile.ngrok-free.dev"
-          aria-label="Khám phá sản phẩm EduVision Smart ClassRoom"
+          href="https://properly-pursuable-compile.ngrok-free.dev/"
+          data-product-link
+          aria-label="Trải nghiệm EduVision Smart Classroom"
         >
           <span class="product-cta__copy">
-            <small>TRẢI NGHIỆM SMART CLASSROOM</small>
-            <strong>KHÁM PHÁ SẢN PHẨM</strong>
+            <small>MỞ SMART CLASSROOM</small>
+            <strong>TRẢI NGHIỆM EDUVISION</strong>
           </span>
-          <span class="product-cta__icon" aria-hidden="true">↗</span>
+          <span class="product-cta__icon" aria-hidden="true">→</span>
         </a>
       </div>
     </section>
